@@ -134,7 +134,9 @@ export function siteStatePlugin(stateDir: string, userDbDir?: string): Plugin {
         let dbCount = 0;
         if (userStore) {
           try {
-            dbCount = (await userStore.listRegisteredEmails()).length;
+            dbCount = typeof userStore.countAccounts === 'function'
+              ? await userStore.countAccounts()
+              : (await userStore.listRegisteredEmails()).length;
           } catch {
             /* ignore user count errors */
           }

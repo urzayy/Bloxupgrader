@@ -242,20 +242,30 @@ function driftPlayersOnline(current) {
 
 let registeredCountCache = { count: 0, at: 0 };
 
+async function refreshRegisteredUserCount(force = false) {
+  if (!force && Date.now() - registeredCountCache.at < 120_000 && registeredCountCache.count > 0) {
+    return registeredCountCache.count;
+  }
+  try {
+    const dbCount = await Promise.race([
+      userStore.countAccounts(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('user count timeout')), 5000)),
+    ]);
+    const next = Math.max(0, Math.floor(Number(dbCount) || 0));
+    if (next > 0 || registeredCountCache.count === 0) {
+      registeredCountCache = { count: next, at: Date.now() };
+    } else {
+      registeredCountCache = { ...registeredCountCache, at: Date.now() };
+    }
+  } catch (error) {
+    console.warn('[site-state] user count failed:', error instanceof Error ? error.message : error);
+  }
+  return registeredCountCache.count;
+}
+
 async function buildPublicSiteState() {
   const state = loadState();
-  let dbCount = registeredCountCache.count;
-  if (Date.now() - registeredCountCache.at > 30_000) {
-    try {
-      dbCount = await Promise.race([
-        userStore.countAccounts(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('user count timeout')), 800)),
-      ]);
-      registeredCountCache = { count: dbCount, at: Date.now() };
-    } catch {
-      /* keep last count */
-    }
-  }
+  const dbCount = await refreshRegisteredUserCount(false);
   return {
     feed: state.feed,
     totalUpgrades: state.totalUpgrades,
@@ -1632,6 +1642,9 @@ setInterval(() => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[BloxUpgrader.com] listening on 0.0.0.0:${PORT} ${SITE_URL}`);
+  void refreshRegisteredUserCount(true).then((count) => {
+    console.log(`[site-state] registered users=${count}`);
+  }).catch(() => {});
   void refreshStorageStatus().then(() => {
     console.log(`[UserDB] backend=${userStore.type ?? 'file'} path=${storageStatus.path}`);
     console.log(`[UserDB] storage ${storageStatus.ok ? 'OK' : 'FAILED'}${storageStatus.error ? `: ${storageStatus.error}` : ''}`);

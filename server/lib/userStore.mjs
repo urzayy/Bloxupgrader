@@ -156,14 +156,15 @@ export function createUserStore({ userDbDir, adminEmailsStore }) {
       return withTimeout(remoteStore.listRegisteredEmails(), 1200, async () => []);
     },
     countAccounts: async () => {
+      let remoteCount = 0;
       try {
-        const remoteCount = await withTimeout(remoteStore.countAccounts(), 800, () => null);
-        if (typeof remoteCount === 'number' && remoteCount > 0) return remoteCount;
+        const counted = await withTimeout(remoteStore.countAccounts(), 4000, () => null);
+        if (typeof counted === 'number' && Number.isFinite(counted)) remoteCount = counted;
       } catch {
         /* file fallback */
       }
-      const local = await fileStore.listRegisteredEmails();
-      return local.length;
+      const localCount = (await fileStore.listRegisteredEmails()).length;
+      return Math.max(remoteCount, localCount);
     },
     getUser: async (userId) => {
       const local = await fileStore.getUser(userId);
