@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: bloxupgrader
+    runtime: node
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    disk:
+      name: bloxupgrader-data
+      mountPath: /var/data/bloxupgrader
+      sizeGB: 5
+    scaling:
+      minInstances: 1
+      maxInstances: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+      - key: SITE_URL
+        value: https://bloxupgrader.com
+      - key: DATA_DIR
+        value: /var/data/bloxupgrader
+      - key: SUPABASE_URL
+        value: https://ukzunbjjjpylkecwcrtk.supabase.co
+      - key: SUPABASE_SECRET_KEY
+        sync: false

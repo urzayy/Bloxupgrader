@@ -1,0 +1,486 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import dotenv from 'dotenv';
+import type { Plugin } from 'vite';
+import { createUserStore } from './server/lib/userStore.mjs';
+import { createPlayerStateStore } from './server/lib/playerStateStore.mjs';
+import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { clearAccountByEmail as resetAccountByEmail } from './server/lib/accountReset.mjs';
+import { createAccountResetMarkerStore } from './server/lib/accountResetMarker.mjs';
+import { createAccountBanStore } from './server/lib/accountBanStore.mjs';
+import { createProfilePhotoStore } from './server/lib/profilePhotoStore.mjs';
+import { shouldSkipEmptyPlayerStateOverwrite } from './server/lib/playerStateSyncGuard.mjs';
+
+dotenv.config();
+
+function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+function sendJson(res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s: string) => void }, status: number, data: unknown) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify(data));
+}
+
+export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
+  const siteStateDir = stateDir ?? path.resolve(path.dirname(dbDir), 'site-state');
+  const adminEmailsStore = createAdminEmailsStore(siteStateDir);
+  const userStore = createUserStore({ userDbDir: dbDir, adminEmailsStore });
+  const playerStateDir = path.resolve(path.dirname(dbDir), 'player-state');
+  const playerStateStore = createPlayerStateStore({ playerStateDir, adminEmailsStore });
+  const accountResetsDir = path.resolve(path.dirname(dbDir), 'account-resets');
+  const accountBansDir = path.resolve(path.dirname(dbDir), 'account-bans');
+  const resetMarkerStore = createAccountResetMarkerStore(accountResetsDir);
+  const banStore = createAccountBanStore(accountBansDir);
+  const profilePhotoDir = path.resolve(path.dirname(dbDir), 'profile-photos');
+  const profilePhotoStore = createProfilePhotoStore(profilePhotoDir);
+  const logsDir = path.resolve(path.dirname(dbDir), 'user-logs');
+  const chatsDir = path.resolve(path.dirname(dbDir), 'withdraw-chats');
+  const grantsDir = path.resolve(path.dirname(dbDir), 'inventory-grants');
+  const balanceGrantsDir = path.resolve(path.dirname(dbDir), 'balance-grants');
+
+  function appendTxtLog(email: string, line: string) {
+    const logsDir = path.resolve(path.dirname(dbDir), 'user-logs');
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+    const sanitizeEmail = (value: string) => value.replace(/@/g, '_at_').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = path.join(logsDir, `${sanitizeEmail(email)}.txt`);
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(
+        filePath,
+        `# Blox Upgrader — ${email}\n# Created: ${new Date().toISOString()}\n\n${line}\n`,
+        'utf8',
+      );
+    } else {
+      fs.appendFileSync(filePath, `${line}\n`, 'utf8');
+    }
+  }
+
+  return {
+    name: 'user-db-api',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url?.split('?')[0] ?? '';
+
+        try {
+          if (url === '/api/auth/register' && req.method === 'POST') {
+            const body = await readJsonBody(req) as Record<string, unknown>;
+            if (!body.userId || !body.email || !body.passwordHash || !body.salt) {
+              sendJson(res, 400, { error: 'bad request' });
+              return;
+            }
+            const normalizedEmail = String(body.email).trim().toLowerCase();
+            if (banStore.isBanned(normalizedEmail)) {
+              sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
+              return;
+            }
+            const result = await userStore.registerAccount({ ...body, isNewAccount: true });
+            if (result?.conflict) {
+              sendJson(res, 409, { ok: false, error: 'email_exists', message: 'Esta cuenta ya existe. Inicia sesión.' });
+              return;
+            }
+            if (result?.line && typeof body.email === 'string') appendTxtLog(body.email, result.line);
+            sendJson(res, 200, { ok: true, user: result?.user ?? null });
+            return;
+          }
+
+          if (url === '/api/auth/session' && req.method === 'POST') {
+            const body = await readJsonBody(req) as { email?: string; password?: string };
+            if (!body.email || !body.password) {
+              sendJson(res, 400, { error: 'bad request' });
+              return;
+            }
+            const normalizedEmail = String(body.email).trim().toLowerCase();
+            if (banStore.isBanned(normalizedEmail)) {
+              sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
+              return;
+            }
+            const auth = await userStore.authenticateAccount({ email: normalizedEmail, password: body.password });
+            if (auth.notFound) {
+              sendJson(res, 404, { ok: false, notFound: true });
+              return;
+            }
+            if (!auth.ok) {
+              sendJson(res, 401, { ok: false, error: 'wrong_password' });
+              return;
+            }
+            const playerState = await playerStateStore.getPlayerStateByEmail(normalizedEmail);
+            sendJson(res, 200, {
+              ok: true,
+              user: {
+                userId: auth.userId,
+                email: auth.email,
+                nickname: auth.nickname,
+                salt: auth.salt,
+              },
+              playerState,
+            });
+            return;
+          }
+
+          if (url === '/api/auth/login' && req.method === 'POST') {
+            const body = await readJsonBody(req) as { userId?: string; email?: string; nickname?: string };
+            if (!body.userId || !body.email) {
+              sendJson(res, 400, { error: 'bad request' });
+              return;
+            }
+            const normalizedEmail = String(body.email).trim().toLowerCase();
+            if (banStore.isBanned(normalizedEmail)) {
+              sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
+              return;
+            }
+            const result = await userStore.touchAccountLogin(body);
+            if (result?.line) appendTxtLog(body.email, result.line);
+            sendJson(res, 200, {
+              ok: true,
+              user: result?.user ?? null,
+              canonicalUserId: result?.canonicalUserId ?? body.userId,
+            });
+            return;
+          }
+
+          if (url === '/api/users/sync' && req.method === 'POST') {
+            const body = await readJsonBody(req) as {
+              userId?: string;
+              email?: string;
+              nickname?: string;
+              isNewAccount?: boolean;
+            };
+            if (!body.userId || !body.email) {
+              sendJson(res, 400, { error: 'bad request' });
+              return;
+            }
+            const user = await userStore.upsertUser(body);
+            sendJson(res, 200, { ok: true, user });
+            return;
+          }
+
+          if (url === '/api/user-log' && req.method === 'POST') {
+            const body = await readJsonBody(req) as {
+              userId?: string;
+              email?: string;
+              line?: string;
+              action?: string;
+              details?: Record<string, string | number | boolean | null | undefined>;
+            };
+            if (!body.email || typeof body.line !== 'string') {
+              sendJson(res, 400, { error: 'bad request' });
+              return;
+            }
+            appendTxtLog(body.email, body.line);
+            const event = await userStore.appendEvent(body);
+            sendJson(res, 200, { ok: true, eventId: event.id });
+            return;
+          }
+
+          if (url === '/api/player-state/sync' && req.method === 'POST') {
+            const body = await readJsonBody(req) as {
+              userId?: string;
+              email?: string;
+              balance?: number;
+              inventory?: unknown;
+              resetAck?: number;
+            };
+            if (!body.userId || !body.email) {
+              sendJson(res, 400, { error: 'bad request' });
+              return;
+            }
+            const normalizedEmail = String(body.email).trim().toLowerCase();
+            if (banStore.isBanned(normalizedEmail)) {
+              sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
+              return;
+            }
+            const pendingResetAt = resetMarkerStore.getResetAt(normalizedEmail);
+
+            if (pendingResetAt && Number(body.resetAck) !== pendingResetAt) {
+              const state = await playerStateStore.savePlayerState({
+                userId: body.userId,
+                email: normalizedEmail,
+                balance: 0,
+                inventory: [],
+              });
+              sendJson(res, 200, { ok: true, forceReset: true, resetAt: pendingResetAt, state });
+              return;
+            }
+
+            if (pendingResetAt && Number(body.resetAck) === pendingResetAt) {
+              resetMarkerStore.clearReset(normalizedEmail);
+            }
+
+            const existing = await playerStateStore.getPlayerStateByEmail(normalizedEmail);
+            if (shouldSkipEmptyPlayerStateOverwrite(existing, body.balance, body.inventory)) {
+              sendJson(res, 200, { ok: true, state: existing, skippedEmptyOverwrite: true });
+              return;
+            }
+
+            const state = await playerStateStore.savePlayerState(body);
+            sendJson(res, 200, { ok: true, state });
+            return;
+          }
+
+          if (url === '/api/player-state' && req.method === 'GET') {
+            const email = new URL(req.url ?? '', 'http://local').searchParams.get('email')?.trim().toLowerCase() ?? '';
+            if (!email) {
+              sendJson(res, 400, { error: 'email required' });
+              return;
+            }
+            const state = await playerStateStore.getPlayerStateByEmail(email);
+            sendJson(res, 200, { state });
+            return;
+          }
+
+          if (url === '/api/player-state/reset-pending' && req.method === 'GET') {
+            const email = new URL(req.url ?? '', 'http://local').searchParams.get('email')?.trim().toLowerCase() ?? '';
+            if (!email) {
+              sendJson(res, 400, { error: 'email required' });
+              return;
+            }
+            sendJson(res, 200, { resetAt: resetMarkerStore.getResetAt(email) });
+            return;
+          }
+
+          if (url === '/api/account-ban-status' && req.method === 'GET') {
+            const email = new URL(req.url ?? '', 'http://local').searchParams.get('email')?.trim().toLowerCase() ?? '';
+            if (!email) {
+              sendJson(res, 400, { error: 'email required' });
+              return;
+            }
+            banStore.purgeExpired();
+            const ban = banStore.getBan(email);
+            if (!ban) {
+              sendJson(res, 200, { banned: false });
+              return;
+            }
+            sendJson(res, 200, {
+              banned: true,
+              bannedAt: ban.bannedAt,
+              bannedUntil: ban.bannedUntil,
+              reason: ban.reason,
+              permanent: ban.permanent,
+              days: ban.days,
+            });
+            return;
+          }
+
+          if (url === '/api/profile-photo' && req.method === 'GET') {
+            const userId = new URL(req.url ?? '', 'http://local').searchParams.get('userId') ?? '';
+            if (!userId) {
+              sendJson(res, 400, { error: 'userId required' });
+              return;
+            }
+            sendJson(res, 200, { photo: profilePhotoStore.getPhoto(userId) });
+            return;
+          }
+
+          if (url === '/api/profile-photo' && req.method === 'POST') {
+            const body = await readJsonBody(req) as {
+              userId?: string;
+              email?: string;
+              dataUrl?: string;
+            };
+            const result = profilePhotoStore.savePhoto(body);
+            if (!result.ok) {
+              const message = result.error === 'too_large'
+                ? 'La imagen es demasiado grande.'
+                : result.error === 'invalid_format'
+                  ? 'Solo JPG o PNG.'
+                  : 'No se pudo guardar la foto.';
+              sendJson(res, 400, { ok: false, error: result.error, message });
+              return;
+            }
+            sendJson(res, 200, { ok: true, photo: result.photo });
+            return;
+          }
+
+          if (url === '/api/admin/ban-user' && req.method === 'POST') {
+            const body = await readJsonBody(req) as {
+              adminEmail?: string;
+              email?: string;
+              days?: number | null;
+              reason?: string | null;
+            };
+            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            const targetEmail = String(body.email ?? '').trim().toLowerCase();
+            if (!targetEmail) {
+              sendJson(res, 400, { error: 'email required' });
+              return;
+            }
+            if (userStore.isAdminEmail(targetEmail)) {
+              sendJson(res, 400, { error: 'Cannot ban admin accounts' });
+              return;
+            }
+            const days = body.days == null ? null : Number(body.days);
+            const ban = banStore.banUser(targetEmail, {
+              bannedBy: String(body.adminEmail).trim().toLowerCase(),
+              days,
+              reason: body.reason,
+            });
+            sendJson(res, 200, { ok: true, ban });
+            return;
+          }
+
+          if (url === '/api/admin/unban-user' && req.method === 'POST') {
+            const body = await readJsonBody(req) as { adminEmail?: string; email?: string };
+            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            const targetEmail = String(body.email ?? '').trim().toLowerCase();
+            if (!targetEmail) {
+              sendJson(res, 400, { error: 'email required' });
+              return;
+            }
+            const result = banStore.unbanUser(targetEmail);
+            sendJson(res, 200, { ok: true, ...result });
+            return;
+          }
+
+          if (url === '/api/admin/bans' && req.method === 'GET') {
+            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
+            if (!userStore.isAdminEmail(adminEmail)) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            banStore.purgeExpired();
+            sendJson(res, 200, { bans: banStore.listActiveBans() });
+            return;
+          }
+
+          if (url === '/api/admin/player-state' && req.method === 'GET') {
+            const params = new URL(req.url ?? '', 'http://local').searchParams;
+            const adminEmail = params.get('adminEmail') ?? '';
+            const email = params.get('email') ?? '';
+            if (!playerStateStore.isAdminEmail(adminEmail)) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            if (!email) {
+              sendJson(res, 400, { error: 'email required' });
+              return;
+            }
+            const state = await playerStateStore.getPlayerStateByEmail(email);
+            if (!state) {
+              sendJson(res, 404, { error: 'not found' });
+              return;
+            }
+            sendJson(res, 200, { state });
+            return;
+          }
+
+          if (url === '/api/admin/clear-account' && req.method === 'POST') {
+            const body = await readJsonBody(req) as { adminEmail?: string; email?: string };
+            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            if (!body.email) {
+              sendJson(res, 400, { error: 'email required' });
+              return;
+            }
+            const result = await resetAccountByEmail(body.email, {
+              userStore,
+              playerStateStore,
+              resetMarkerStore,
+              logsDir,
+              grantsDir,
+              balanceGrantsDir,
+              chatsDir,
+            });
+            sendJson(res, 200, result);
+            return;
+          }
+
+          if (url === '/api/admin/user-db/status' && req.method === 'GET') {
+            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
+            if (!userStore.isAdminEmail(adminEmail)) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            const storage = await userStore.checkConnection();
+            const users = await userStore.listUsers();
+            const emails = await userStore.listRegisteredEmails();
+            const totalAccountRows = typeof userStore.countAccounts === 'function'
+              ? await userStore.countAccounts()
+              : users.length;
+            sendJson(res, 200, {
+              storage,
+              backend: userStore.type ?? 'file',
+              dataDir: userStore.type === 'supabase' ? process.env.SUPABASE_URL : path.dirname(dbDir),
+              logsDir: path.resolve(path.dirname(dbDir), 'user-logs'),
+              userCount: users.length,
+              totalAccountRows,
+              registeredEmailCount: emails.length,
+              registeredEmails: emails,
+              siteUrl: 'http://localhost:5173',
+            });
+            return;
+          }
+
+          if (url === '/api/admin/user-db/users' && req.method === 'GET') {
+            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
+            if (!userStore.isAdminEmail(adminEmail)) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            sendJson(res, 200, { users: await userStore.listUsers() });
+            return;
+          }
+
+          const userMatch = url.match(/^\/api\/admin\/user-db\/users\/([^/]+)$/);
+          if (userMatch && req.method === 'GET') {
+            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
+            if (!userStore.isAdminEmail(adminEmail)) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            const userId = decodeURIComponent(userMatch[1]);
+            const user = await userStore.getUser(userId);
+            if (!user) {
+              sendJson(res, 404, { error: 'not found' });
+              return;
+            }
+            sendJson(res, 200, { user, events: await userStore.getUserEvents(userId) });
+            return;
+          }
+
+          const exportMatch = url.match(/^\/api\/admin\/user-db\/users\/([^/]+)\/export\.txt$/);
+          if (exportMatch && req.method === 'GET') {
+            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
+            if (!userStore.isAdminEmail(adminEmail)) {
+              sendJson(res, 403, { error: 'forbidden' });
+              return;
+            }
+            const userId = decodeURIComponent(exportMatch[1]);
+            if (!(await userStore.getUser(userId))) {
+              sendJson(res, 404, { error: 'not found' });
+              return;
+            }
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.end(await userStore.exportUserTxt(userId));
+            return;
+          }
+        } catch (error) {
+          console.error('[user-db-api]', error);
+          sendJson(res, 500, { error: 'error' });
+          return;
+        }
+
+        next();
+      });
+    },
+  };
+}

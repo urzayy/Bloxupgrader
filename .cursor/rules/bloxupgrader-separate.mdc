@@ -1,0 +1,19 @@
+---
+description: BloxUpgrader.com is a separate product from ps99win.fun
+alwaysApply: true
+---
+
+# BloxUpgrader is not ps99win
+
+This repo is **BloxUpgrader.com** only (CS2 skins, cases, upgrade, vaults, giveaways).
+
+It has nothing to do with **ps99win.fun**. Do not copy, import, rebrand, or reuse anything from that site.
+
+Never add or keep:
+
+- ps99win.fun URLs, emails, Discord, or branding
+- Big Games / Roblox trade OAuth
+- crash, roulette, blackjack, lobby casino games, pet catalogs, or PS99 items
+- ps99win database, env vars, or deploy config
+
+Source of truth: `c:\Users\hugou\Downloads\Blox-upgrader-main.zip`. Leave the ps99win project untouched.

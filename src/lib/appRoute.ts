@@ -1,0 +1,128 @@
+export type AppRoute = 'main' | 'upgrade' | 'profile' | 'free-cases' | 'giveaways' | 'admin' | 'case-battles' | 'terms-of-service' | 'privacy-policy' | 'cookie-policy' | 'provably-fair';
+
+export function routeFromPathname(pathname = window.location.pathname): AppRoute {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  if (normalized === '/profile') return 'profile';
+  if (normalized === '/upgrade') return 'upgrade';
+  if (normalized === '/free-cases' || normalized.startsWith('/free-cases/')) return 'free-cases';
+  if (normalized === '/giveaways' || normalized.startsWith('/giveaways/')) return 'giveaways';
+  if (normalized === '/case-battles' || normalized.startsWith('/case-battles/')) return 'case-battles';
+  if (normalized === '/admin') return 'admin';
+  if (normalized === '/terms-of-service') return 'terms-of-service';
+  if (normalized === '/privacy-policy') return 'privacy-policy';
+  if (normalized === '/cookie-policy') return 'cookie-policy';
+  if (normalized === '/provably-fair') return 'provably-fair';
+  return 'main';
+}
+
+export function freeCaseSlugFromPathname(pathname = window.location.pathname): string | null {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  const match = normalized.match(/^\/free-cases\/([^/]+)$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+export function pathForRoute(route: AppRoute): string {
+  if (route === 'profile') return '/profile';
+  if (route === 'upgrade') return '/upgrade';
+  if (route === 'free-cases') return '/free-cases';
+  if (route === 'giveaways') return '/giveaways';
+  if (route === 'case-battles') return '/case-battles';
+  if (route === 'admin') return '/admin';
+  if (route === 'terms-of-service') return '/terms-of-service';
+  if (route === 'privacy-policy') return '/privacy-policy';
+  if (route === 'cookie-policy') return '/cookie-policy';
+  if (route === 'provably-fair') return '/provably-fair';
+  return '/';
+}
+
+export function navigateApp(route: AppRoute): void {
+  const nextPath = pathForRoute(route);
+  if (window.location.pathname !== nextPath) {
+    window.history.pushState({ route }, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+}
+
+export function navigateFreeCase(slug: string): void {
+  const nextPath = `/free-cases/${slug.toLowerCase()}`;
+  if (window.location.pathname !== nextPath) {
+    window.history.pushState({ route: 'free-cases' }, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+}
+
+export function caseSlugFromPathname(pathname = window.location.pathname): string | null {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  const match = normalized.match(/^\/cases\/([^/]+)$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+export function navigateCase(slug: string): void {
+  const nextPath = `/cases/${slug.toLowerCase()}`;
+  if (window.location.pathname !== nextPath) {
+    window.history.pushState({ route: 'main' }, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+}
+
+export function giveawayPeriodFromPathname(pathname = window.location.pathname): string | null {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  const match = normalized.match(/^\/giveaways\/([^/]+)$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+export function navigateGiveaway(period: string): void {
+  const nextPath = `/giveaways/${period.toLowerCase()}`;
+  if (window.location.pathname !== nextPath) {
+    window.history.pushState({ route: 'giveaways' }, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+}
+
+export function battleIdFromPathname(pathname = window.location.pathname): string | null {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  if (normalized === '/case-battles/create') return null;
+  const match = normalized.match(/^\/case-battles\/([^/]+)$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+export function navigateCaseBattle(battleId: string): void {
+  const nextPath = `/case-battles/${battleId.toLowerCase()}`;
+  if (window.location.pathname !== nextPath) {
+    window.history.pushState({ route: 'case-battles' }, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+}
+
+export function navigateCaseBattles(): void {
+  navigateApp('case-battles');
+}
+
+export function navigateCreateCaseBattle(): void {
+  const nextPath = '/case-battles/create';
+  if (window.location.pathname !== nextPath) {
+    window.history.pushState({ route: 'case-battles' }, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+}
+
+export function navigateTermsOfService(): void {
+  navigateApp('terms-of-service');
+}
+
+export function navigatePrivacyPolicy(): void {
+  navigateApp('privacy-policy');
+}
+
+export function navigateCookiePolicy(): void {
+  navigateApp('cookie-policy');
+}
+
+export function navigateProvablyFair(): void {
+  navigateApp('provably-fair');
+}
+
+export function isCreateCaseBattlePath(pathname = window.location.pathname): boolean {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  return normalized === '/case-battles/create';
+}
