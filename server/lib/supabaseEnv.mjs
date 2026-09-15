@@ -36,5 +36,13 @@ export function createServiceSupabase() {
   if (!creds) return null;
   return createClient(creds.url, creds.secret, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      fetch: (input, init) => {
+        const timeout = AbortSignal.timeout(8000);
+        const signals = [timeout, init?.signal].filter(Boolean);
+        const signal = signals.length === 1 ? timeout : AbortSignal.any(signals);
+        return fetch(input, { ...init, signal });
+      },
+    },
   });
 }

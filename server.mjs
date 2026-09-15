@@ -248,7 +248,10 @@ async function buildPublicSiteState() {
   const state = loadState();
   let dbCount = 0;
   try {
-    dbCount = (await userStore.listRegisteredEmails()).length;
+    dbCount = await Promise.race([
+      userStore.listRegisteredEmails().then(emails => emails.length),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('user count timeout')), 1500)),
+    ]);
   } catch {
     /* ignore user count errors */
   }

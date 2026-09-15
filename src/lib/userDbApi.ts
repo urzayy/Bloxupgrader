@@ -63,6 +63,7 @@ export async function requestServerSession(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      signal: AbortSignal.timeout(12000),
     });
     const data = await res.json().catch(() => ({})) as {
       ok?: boolean;
