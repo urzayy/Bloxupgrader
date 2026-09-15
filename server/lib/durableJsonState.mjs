@@ -48,14 +48,16 @@ export async function loadJsonState(key) {
   if (!supabase) return null;
   const id = String(key || '').trim();
   if (!id) return null;
+  const signal = AbortSignal.timeout(4000);
 
-  const primary = await supabase.from(TABLE).select('payload').eq('id', id).maybeSingle();
+  const primary = await supabase.from(TABLE).select('payload').eq('id', id).abortSignal(signal).maybeSingle();
   if (!primary.error && primary.data?.payload != null) return primary.data.payload;
 
   const fallback = await supabase
     .from(FALLBACK_TABLE)
     .select('bundle')
     .eq('id', jsonStateFallbackId(id))
+    .abortSignal(AbortSignal.timeout(4000))
     .maybeSingle();
   if (!fallback.error && fallback.data?.bundle != null) return fallback.data.bundle;
 

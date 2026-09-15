@@ -101,9 +101,12 @@ const durableDirs = [
   ['case-battles', CASE_BATTLES_DIR],
 ].map(([key, dir]) => ({ key, dir, handle: attachDurableDir({ key, dir }) }));
 
-await Promise.all(durableDirs.map(entry => entry.handle.ready));
+await Promise.race([
+  Promise.allSettled(durableDirs.map(entry => entry.handle.ready)),
+  new Promise(resolve => setTimeout(resolve, 4000)),
+]);
 if (durableJsonEnabled()) {
-  console.log('[durable-json] restored BloxUpgrader file data from server backup');
+  console.log('[durable-json] file backup ready (or timed out; server will start anyway)');
 }
 
 const adminEmailsStore = createAdminEmailsStore(STATE_DIR);
