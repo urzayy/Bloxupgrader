@@ -21,6 +21,6 @@ services:
       - key: DATA_DIR
         value: /var/data/bloxupgrader
       - key: SUPABASE_URL
-        value: https://ukzunbjjjpylkecwcrtk.supabase.co
+        sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false

@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -29,7 +30,34 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = __dirname;
 const DIST = path.join(ROOT, 'dist');
-const DATA_DIR = process.env.DATA_DIR || ROOT;
+
+function canWriteDir(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, '.write-probe');
+    fs.writeFileSync(probe, 'ok');
+    fs.unlinkSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveDataDir() {
+  const requested = (process.env.DATA_DIR || '').trim();
+  const fallbacks = [requested, ROOT, path.join(os.tmpdir(), 'bloxupgrader-data')].filter(Boolean);
+  for (const dir of fallbacks) {
+    if (canWriteDir(dir)) {
+      if (requested && dir !== requested) {
+        console.warn(`[data] ${requested} is not writable; using ${dir}`);
+      }
+      return dir;
+    }
+  }
+  return ROOT;
+}
+
+const DATA_DIR = resolveDataDir();
 const USER_DB_DIR = process.env.USER_DB_DIR || path.join(DATA_DIR, 'user-db');
 const PLAYER_STATE_DIR = process.env.PLAYER_STATE_DIR || path.join(DATA_DIR, 'player-state');
 const ACCOUNT_RESETS_DIR = process.env.ACCOUNT_RESETS_DIR || path.join(DATA_DIR, 'account-resets');
@@ -52,8 +80,8 @@ const BASE_TOTAL_UPGRADES = 13_200;
 const MIN_DEPOSIT_TOTAL = 1000;
 const MIN_WITHDRAW_TOTAL = 20;
 
-for (const dir of [LOGS_DIR, USER_DB_DIR, path.join(USER_DB_DIR, 'events'), PLAYER_STATE_DIR, ACCOUNT_RESETS_DIR, ACCOUNT_BANS_DIR, CHATS_DIR, GRANTS_DIR, BALANCE_GRANTS_DIR, STATE_DIR, PROMO_CODES_DIR, ANNOUNCEMENTS_DIR, PROFILE_PHOTOS_DIR, GIVEAWAYS_DIR, CASE_BATTLES_DIR]) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+for (const dir of [DATA_DIR, LOGS_DIR, USER_DB_DIR, path.join(USER_DB_DIR, 'events'), PLAYER_STATE_DIR, ACCOUNT_RESETS_DIR, ACCOUNT_BANS_DIR, CHATS_DIR, GRANTS_DIR, BALANCE_GRANTS_DIR, STATE_DIR, PROMO_CODES_DIR, ANNOUNCEMENTS_DIR, PROFILE_PHOTOS_DIR, GIVEAWAYS_DIR, CASE_BATTLES_DIR]) {
+  fs.mkdirSync(dir, { recursive: true });
 }
 
 const durableDirs = [

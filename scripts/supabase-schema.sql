@@ -77,3 +77,15 @@ alter table public.blox_withdraw_chats enable row level security;
 
 drop policy if exists "blox_withdraw_chats_no_public" on public.blox_withdraw_chats;
 create policy "blox_withdraw_chats_no_public" on public.blox_withdraw_chats for all using (false);
+
+-- Giveaways, grants and other JSON files (backup across deploys)
+create table if not exists public.blox_json_state (
+  id text primary key,
+  payload jsonb not null,
+  updated_at bigint not null
+);
+
+alter table public.blox_json_state enable row level security;
+
+drop policy if exists "blox_json_state_no_public" on public.blox_json_state;
+create policy "blox_json_state_no_public" on public.blox_json_state for all using (false);
