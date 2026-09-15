@@ -7,7 +7,7 @@ import {
 } from './lootRollRange';
 import { ROLL_MAX, winRollMax, type RollResult } from './wheelMath';
 
-export type FairGameType = 'case' | 'free-case' | 'upgrade' | 'battle' | 'consolation';
+export type FairGameType = 'case' | 'free-case' | 'upgrade' | 'battle';
 
 export interface FairRollProof {
   clientSeed: string;

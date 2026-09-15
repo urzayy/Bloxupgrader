@@ -20,15 +20,10 @@ import { logUpgradeResult } from './lib/userActivityLog';
 import { calcProbability, formatUSD, winRollMax, type RollResult } from './lib/wheelMath';
 import { executeFairRoll, resolveRollFromProof, type FairRollProof } from './lib/provablyFair';
 import { saveFairProof } from './lib/fairProofStorage';
-import { applyUpgradeWin, commitUpgradeStake, createConsolationGrantedSkin, grantSkinToInventory, inventoryTotal, MAX_INPUT_SKINS, purchaseSkinCopies, sellSkinFromInventory, withdrawSkinsFromInventory } from './lib/inventory';
+import { applyUpgradeWin, commitUpgradeStake, grantSkinToInventory, inventoryTotal, MAX_INPUT_SKINS, purchaseSkinCopies, sellSkinFromInventory, withdrawSkinsFromInventory } from './lib/inventory';
 import { loadInventory, saveInventory, clearInventoryForUserId, getInventoryStorageKey } from './lib/inventoryStorage';
 import { loadBalance, saveBalance, clearBalanceForUserId, getBalanceStorageKey } from './lib/balanceStorage';
 import { clearPendingUpgrade, getPendingUpgradeStakedSkinIds, getPendingUpgradeStorageKey, loadPendingUpgrade, lockPendingUpgradeRoll, savePendingUpgrade } from './lib/upgradePendingStorage';
-import {
-  clearPendingLossConsolation,
-  loadPendingLossConsolation,
-  savePendingLossConsolation,
-} from './lib/lossConsolationPendingStorage';
 import { normalizeGrantEmail } from './lib/inventoryGrants';
 import { BASE_TOTAL_UPGRADES } from './lib/feed';
 import { applySiteState, fetchSiteState, publishFeedEvent } from './lib/siteStateApi';
@@ -63,12 +58,9 @@ import { ThanksToast } from './components/ui/ThanksToast';
 import type { ShopPurchaseItem } from './components/shop/ShopPanel';
 import type { DepositItem } from './components/deposit/DepositModal';
 import { fetchAccountBanStatus } from './lib/accountBanApi';
-import { qualifiesForLossConsolationCase } from './lib/devLossConsolation';
 import { DEV_MOBILE_LAYOUT } from './lib/devMobileLayout';
 import { DEV_CLEAN_HEADER_LAYOUT } from './lib/devCleanHeaderLayout';
 import { DEV_FEED_CLIENT_POLL_MS } from './lib/devLiveFeed';
-import { buildLossConsolationCase, type LossConsolationResult } from './lib/lossConsolationCase';
-import { LossConsolationCaseModal } from './components/upgrade/LossConsolationCaseModal';
 import { useAppRoute, useBattleId, useCaseSlug, useFreeCaseSlug, useGiveawayPeriod, useIsCreateCaseBattle } from './hooks/useAppRoute';
 import { ackGiveawayWin, fetchPendingGiveawayWins, type GiveawayPendingWin } from './lib/giveawayApi';
 import { dispatchGiveawayUpdated } from './hooks/useGiveawayDetail';
@@ -143,38 +135,14 @@ export default function DevApp() {
   const playerStateSyncTimerRef = useRef<number | null>(null);
   const lastResetAckRef = useRef<number | null>(null);
   const pendingUpgradeRecoveredRef = useRef<string | null>(null);
-  const pendingConsolationRecoveredRef = useRef<string | null>(null);
   const upgradeSessionKeyRef = useRef<string | null>(null);
   const upgradeFairProofRef = useRef<FairRollProof | null>(null);
-  const [lossCase, setLossCase] = useState<{
-    lostValue: number;
-    inputLabel: string;
-    result: LossConsolationResult;
-    turbo: boolean;
-    grantedSkin: Skin;
-    pending: {
-      won: boolean;
-      roll: RollResult;
-      inputLabel: string;
-      inputImage: string;
-      inputTotal: number;
-      targetSkin: Skin;
-      probability: number;
-    };
-  } | null>(null);
-  const lossCaseCollectingRef = useRef(false);
   inventoryRef.current = inventory;
   balanceRef.current = balance;
 
   const inputTotal = useMemo(() => inventoryTotal(inputSkins), [inputSkins]);
 
-  /** Sorted view for the inventory panel; hides consolation skin until the case finishes. */
-  const inventoryPanelSkins = useMemo(() => {
-    const sorted = sortSkinsByPriceDesc(inventory);
-    const hiddenId = lossCase?.grantedSkin.id;
-    if (!hiddenId) return sorted;
-    return sorted.filter(s => s.id !== hiddenId);
-  }, [inventory, lossCase?.grantedSkin.id]);
+  const inventoryPanelSkins = useMemo(() => sortSkinsByPriceDesc(inventory), [inventory]);
 
   const probability = useMemo(
     () => calcProbability(inputTotal, targetSkin?.price ?? 0),
@@ -238,7 +206,6 @@ export default function DevApp() {
     clearXpForUserId(targetUserId);
     clearFreeCaseCooldowns(targetUserId);
     clearPendingUpgrade(targetUserId);
-    clearPendingLossConsolation(targetUserId);
     inventoryRef.current = [];
     balanceRef.current = 0;
     setInventory([]);
@@ -1102,7 +1069,6 @@ export default function DevApp() {
   useEffect(() => {
     if (user) return;
     pendingUpgradeRecoveredRef.current = null;
-    pendingConsolationRecoveredRef.current = null;
   }, [user]);
 
   useEffect(() => {
@@ -1179,36 +1145,6 @@ export default function DevApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- recover interrupted upgrade once per login
   }, [user?.userId]);
 
-  useEffect(() => {
-    if (!user) return;
-    if (import.meta.env.DEV) {
-      clearPendingLossConsolation(user.userId);
-      return;
-    }
-    if (pendingConsolationRecoveredRef.current === user.userId) return;
-    pendingConsolationRecoveredRef.current = user.userId;
-
-    const pending = loadPendingLossConsolation(user.userId);
-    if (!pending || pending.uiSettled) return;
-
-    const stored = loadInventory(user.userId);
-    const hasSkin = stored.some(s => s.id === pending.grantedSkin.id);
-    const nextInventory = hasSkin ? stored : [...stored, pending.grantedSkin];
-    setInventory(nextInventory);
-    inventoryRef.current = nextInventory;
-    saveInventory(nextInventory, user.userId);
-    void pushPlayerStateSync(nextInventory, balanceRef.current);
-
-    clearPendingLossConsolation(user.userId);
-    finalizeUpgrade(pending.pending);
-    log('UPGRADE.consolation_collect', {
-      skin: pending.grantedSkin.name,
-      value: formatUSD(pending.grantedSkin.price),
-      percent: pending.percent,
-      recovered: true,
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- recover interrupted consolation once per login
-  }, [user?.userId]);
 
   const onUpgradeComplete = useCallback((won: boolean, roll: RollResult) => {
     if (!user || !targetSkin) return;
@@ -1276,69 +1212,10 @@ export default function DevApp() {
       return;
     }
 
-    if (qualifiesForLossConsolationCase(inputTotal)) {
-      lossCaseCollectingRef.current = false;
-      const result = buildLossConsolationCase(inputTotal);
-      const grantedSkin = createConsolationGrantedSkin(result.rewardSkin);
-
-      const current = loadInventory(user.userId);
-      const hasConsolation = current.some(s => s.id === grantedSkin.id);
-      const next = hasConsolation ? current : [...current, grantedSkin];
-      inventoryRef.current = next;
-      saveInventory(next, user.userId);
-      flushSync(() => setInventory(next));
-      void pushPlayerStateSync(next, balanceRef.current);
-
-      savePendingLossConsolation(user.userId, {
-        grantedSkin,
-        lostValue: inputTotal,
-        inputLabel,
-        turbo,
-        percent: result.percent,
-        rewardSkin: result.rewardSkin,
-        pending: finalizePayload,
-        uiSettled: false,
-        timestamp: Date.now(),
-      });
-
-      setLossCase({
-        lostValue: inputTotal,
-        inputLabel,
-        result,
-        turbo,
-        pending: finalizePayload,
-        grantedSkin,
-      });
-      log('UPGRADE.consolation_case', {
-        lost: formatUSD(inputTotal),
-        percent: result.percent,
-        reward: result.rewardSkin.name,
-        rewardValue: formatUSD(result.rewardSkin.price),
-      });
-      clearSelections();
-      return;
-    }
-
     finalizeUpgrade(finalizePayload);
     clearSelections();
   }, [user, targetSkin, probability, turbo, finalizeUpgrade, log, pushPlayerStateSync]);
 
-  const handleLossCaseComplete = useCallback(() => {
-    if (!user || !lossCase || lossCaseCollectingRef.current) return;
-    lossCaseCollectingRef.current = true;
-
-    const snapshot = lossCase;
-    setLossCase(null);
-    clearPendingLossConsolation(user.userId);
-    void pushPlayerStateSync(inventoryRef.current, balanceRef.current);
-
-    finalizeUpgrade(snapshot.pending);
-    log('UPGRADE.consolation_collect', {
-      skin: snapshot.grantedSkin.name,
-      value: formatUSD(snapshot.grantedSkin.price),
-      percent: snapshot.result.percent,
-    });
-  }, [user, lossCase, finalizeUpgrade, log, pushPlayerStateSync]);
 
   const handleUpgradeStart = useCallback((): boolean => {
     if (!user || !inputSkins.length || !targetSkin) return false;
@@ -1491,16 +1368,6 @@ export default function DevApp() {
           durationMs={6000}
         />
 
-        {lossCase && (
-          <LossConsolationCaseModal
-            open
-            lostValue={lossCase.lostValue}
-            inputLabel={lossCase.inputLabel}
-            result={lossCase.result}
-            turbo={lossCase.turbo}
-            onComplete={handleLossCaseComplete}
-          />
-        )}
 
         {DEV_CLEAN_HEADER_LAYOUT && (
           <LiveFeed items={feed} variant="top" className="hidden w-full lg:block" />
