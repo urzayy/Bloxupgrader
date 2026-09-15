@@ -31,18 +31,22 @@ export function getSupabaseCredentials() {
   return { url, secret };
 }
 
+export function supabaseFetch(input, init) {
+  const timeout = AbortSignal.timeout(3000);
+  const signals = [timeout, init?.signal].filter(Boolean);
+  const signal = signals.length === 1 ? timeout : AbortSignal.any(signals);
+  return fetch(input, { ...init, signal });
+}
+
+export function createTimedSupabase(url, secret) {
+  return createClient(url, secret, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: supabaseFetch },
+  });
+}
+
 export function createServiceSupabase() {
   const creds = getSupabaseCredentials();
   if (!creds) return null;
-  return createClient(creds.url, creds.secret, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: {
-      fetch: (input, init) => {
-        const timeout = AbortSignal.timeout(8000);
-        const signals = [timeout, init?.signal].filter(Boolean);
-        const signal = signals.length === 1 ? timeout : AbortSignal.any(signals);
-        return fetch(input, { ...init, signal });
-      },
-    },
-  });
+  return createTimedSupabase(creds.url, creds.secret);
 }

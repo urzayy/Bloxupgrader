@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createClient } from '@supabase/supabase-js';
+import { createTimedSupabase } from './supabaseEnv.mjs';
 import { createAdminEmailsStore } from './adminEmailsStore.mjs';
 
 function normalizeEmail(email) {
@@ -105,9 +105,7 @@ export function createFilePlayerStateStore(rootDir, adminEmailsStore) {
 }
 
 export function createSupabasePlayerStateStore(url, secretKey, adminEmailsStore) {
-  const supabase = createClient(url, secretKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const supabase = createTimedSupabase(url, secretKey);
 
   async function saveToAccounts({ userId, email, balance, inventory }) {
     const normalizedEmail = normalizeEmail(email);
@@ -224,12 +222,10 @@ export function createHybridPlayerStateStore(fileStore, remoteStore) {
     type: remoteStore.type === 'supabase' ? 'hybrid-supabase' : remoteStore.type,
     async savePlayerState(payload) {
       const fileSaved = await fileStore.savePlayerState(payload);
-      try {
-        return await remoteStore.savePlayerState(payload);
-      } catch (error) {
+      void remoteStore.savePlayerState(payload).catch(error => {
         console.error('[player-state] remote save failed, kept file copy:', supabaseErrorMessage(error));
-        return fileSaved;
-      }
+      });
+      return fileSaved;
     },
     async getPlayerStateByEmail(email) {
       try {

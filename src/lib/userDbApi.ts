@@ -15,13 +15,14 @@ export interface LogEventPayload {
   details?: Record<string, string | number | boolean | null | undefined>;
 }
 
-async function postJson(url: string, body: unknown, attempts = 3): Promise<Response | null> {
+async function postJson(url: string, body: unknown, attempts = 1): Promise<Response | null> {
   for (let i = 0; i < attempts; i += 1) {
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(4000),
       });
       if (res.ok || res.status === 409) return res;
       if (i === attempts - 1) {
@@ -63,7 +64,7 @@ export async function requestServerSession(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(4000),
     });
     const data = await res.json().catch(() => ({})) as {
       ok?: boolean;

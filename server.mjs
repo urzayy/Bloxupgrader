@@ -85,12 +85,8 @@ for (const dir of [DATA_DIR, LOGS_DIR, USER_DB_DIR, path.join(USER_DB_DIR, 'even
 }
 
 const durableDirs = [
-  ['user-db', USER_DB_DIR],
-  ['player-state', PLAYER_STATE_DIR],
   ['account-resets', ACCOUNT_RESETS_DIR],
   ['account-bans', ACCOUNT_BANS_DIR],
-  ['user-logs', LOGS_DIR],
-  ['withdraw-chats', CHATS_DIR],
   ['inventory-grants', GRANTS_DIR],
   ['balance-grants', BALANCE_GRANTS_DIR],
   ['site-state', STATE_DIR],
@@ -103,7 +99,7 @@ const durableDirs = [
 
 await Promise.race([
   Promise.allSettled(durableDirs.map(entry => entry.handle.ready)),
-  new Promise(resolve => setTimeout(resolve, 4000)),
+  new Promise(resolve => setTimeout(resolve, 2000)),
 ]);
 if (durableJsonEnabled()) {
   console.log('[durable-json] file backup ready (or timed out; server will start anyway)');
@@ -133,7 +129,7 @@ if (durableJsonEnabled()) {
         /* ignore backup errors */
       }
     }
-  }, 15_000).unref?.();
+  }, 60_000).unref?.();
 }
 let storageStatus = { ok: false, path: userStore.type === 'supabase' ? 'supabase' : USER_DB_DIR };
 
@@ -244,16 +240,21 @@ function driftPlayersOnline(current) {
   return Math.max(480, Math.min(820, current + delta));
 }
 
+let registeredCountCache = { count: 0, at: 0 };
+
 async function buildPublicSiteState() {
   const state = loadState();
-  let dbCount = 0;
-  try {
-    dbCount = await Promise.race([
-      userStore.listRegisteredEmails().then(emails => emails.length),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('user count timeout')), 1500)),
-    ]);
-  } catch {
-    /* ignore user count errors */
+  let dbCount = registeredCountCache.count;
+  if (Date.now() - registeredCountCache.at > 30_000) {
+    try {
+      dbCount = await Promise.race([
+        userStore.countAccounts(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('user count timeout')), 800)),
+      ]);
+      registeredCountCache = { count: dbCount, at: Date.now() };
+    } catch {
+      /* keep last count */
+    }
   }
   return {
     feed: state.feed,
@@ -443,7 +444,7 @@ app.post('/api/auth/session', async (req, res) => {
     }
     const auth = await Promise.race([
       userStore.authenticateAccount({ email: normalizedEmail, password }),
-      new Promise(resolve => setTimeout(() => resolve({ ok: false, notFound: true }), 7000)),
+      new Promise(resolve => setTimeout(() => resolve({ ok: false, notFound: true }), 3000)),
     ]);
     if (auth.notFound) {
       sendJson(res, 404, { ok: false, notFound: true });
@@ -455,9 +456,9 @@ app.post('/api/auth/session', async (req, res) => {
     }
     let playerState = null;
     try {
-      playerState = await Promise.race([
+        playerState = await Promise.race([
         playerStateStore.getPlayerStateByEmail(normalizedEmail),
-        new Promise(resolve => setTimeout(() => resolve(null), 3000)),
+        new Promise(resolve => setTimeout(() => resolve(null), 1200)),
       ]);
     } catch {
       playerState = null;

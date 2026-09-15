@@ -60,6 +60,7 @@ export function createUserStore({ userDbDir, adminEmailsStore }) {
   if (!url || !secret) return fileStore;
 
   const remoteStore = wrapRemote(createSupabaseDb(url, secret, resolvedAdminEmailsStore), resolvedAdminEmailsStore);
+  let usersCache = { at: 0, value: null };
 
   async function withTimeout(promise, ms, fallback) {
     let timer;
@@ -84,68 +85,108 @@ export function createUserStore({ userDbDir, adminEmailsStore }) {
     checkConnection: () => withTimeout(remoteStore.checkConnection(), 5000, () => fileStore.checkConnection()),
     registerAccount: async (payload) => {
       const local = await fileStore.registerAccount(payload);
-      try {
-        await withTimeout(remoteStore.registerAccount(payload), 8000, async () => local);
-      } catch {
-        /* keep local */
-      }
+      void remoteStore.registerAccount(payload).catch(() => {});
       return local;
     },
-    authenticateAccount: (payload) => withTimeout(
-      remoteStore.authenticateAccount(payload),
-      6000,
-      () => fileStore.authenticateAccount(payload),
-    ),
+    authenticateAccount: async (payload) => {
+      let remote = null;
+      try {
+        remote = await withTimeout(remoteStore.authenticateAccount(payload), 2500, () => null);
+      } catch {
+        remote = null;
+      }
+      if (remote?.ok) return remote;
+      const local = await fileStore.authenticateAccount(payload);
+      if (local?.ok) return local;
+      if (remote?.wrongPassword || local?.wrongPassword) {
+        return { ok: false, wrongPassword: true };
+      }
+      return remote ?? local ?? { ok: false, notFound: true };
+    },
     touchAccountLogin: async (payload) => {
       const local = await fileStore.touchAccountLogin(payload);
-      try {
-        await withTimeout(remoteStore.touchAccountLogin(payload), 8000, async () => local);
-      } catch {
-        /* keep local */
-      }
+      void remoteStore.touchAccountLogin(payload).catch(() => {});
       return local;
     },
-    emailExistsOnServer: (email) => withTimeout(
-      remoteStore.emailExistsOnServer(email),
-      4000,
-      () => fileStore.emailExistsOnServer(email),
-    ),
-    getAccountByEmail: (email) => withTimeout(
-      remoteStore.getAccountByEmail(email),
-      4000,
-      () => fileStore.getAccountByEmail(email),
-    ),
+    emailExistsOnServer: async (email) => {
+      const local = await fileStore.emailExistsOnServer(email);
+      if (local) return true;
+      return withTimeout(remoteStore.emailExistsOnServer(email), 4000, () => false);
+    },
+    getAccountByEmail: async (email) => {
+      const local = await fileStore.getAccountByEmail(email);
+      if (local?.passwordHash) return local;
+      const remote = await withTimeout(remoteStore.getAccountByEmail(email), 4000, () => null);
+      return remote ?? local ?? null;
+    },
     upsertUser: async (payload) => {
       const local = await fileStore.upsertUser(payload);
-      try {
-        await withTimeout(remoteStore.upsertUser(payload), 8000, async () => local);
-      } catch {
-        /* keep local */
-      }
+      void remoteStore.upsertUser(payload).catch(() => {});
       return local;
     },
     appendEvent: async (payload) => {
       const local = await fileStore.appendEvent(payload);
-      try {
-        await withTimeout(remoteStore.appendEvent(payload), 8000, async () => local);
-      } catch {
-        /* keep local */
-      }
+      void remoteStore.appendEvent(payload).catch(() => {});
       return local;
     },
-    listUsers: () => withTimeout(remoteStore.listUsers(), 5000, () => fileStore.listUsers()),
-    listRegisteredEmails: () => withTimeout(
-      remoteStore.listRegisteredEmails(),
-      4000,
-      () => fileStore.listRegisteredEmails(),
-    ),
-    countAccounts: () => withTimeout(remoteStore.countAccounts(), 4000, () => fileStore.countAccounts()),
-    getUser: (userId) => withTimeout(remoteStore.getUser(userId), 4000, () => fileStore.getUser(userId)),
-    getUserEvents: (userId, limit) => withTimeout(
-      remoteStore.getUserEvents(userId, limit),
-      5000,
-      () => fileStore.getUserEvents(userId, limit),
-    ),
+    listUsers: async () => {
+      if (usersCache.value && Date.now() - usersCache.at < 20_000) return usersCache.value;
+      const local = await fileStore.listUsers();
+      let remote = [];
+      try {
+        remote = await withTimeout(remoteStore.listUsers(), local.length ? 800 : 2500, async () => []);
+      } catch {
+        remote = [];
+      }
+      const byEmail = new Map();
+      for (const user of [...local, ...remote]) {
+        if (!user?.email) continue;
+        const prev = byEmail.get(user.email);
+        if (!prev || Number(user.lastSeenAt || 0) >= Number(prev.lastSeenAt || 0)) {
+          byEmail.set(user.email, user);
+        }
+      }
+      const merged = [...byEmail.values()].sort((a, b) => Number(b.lastSeenAt || 0) - Number(a.lastSeenAt || 0));
+      usersCache = { at: Date.now(), value: merged };
+      return merged;
+    },
+    listRegisteredEmails: async () => {
+      const local = await fileStore.listRegisteredEmails();
+      if (local.length) return local;
+      return withTimeout(remoteStore.listRegisteredEmails(), 1200, async () => []);
+    },
+    countAccounts: async () => {
+      try {
+        const remoteCount = await withTimeout(remoteStore.countAccounts(), 800, () => null);
+        if (typeof remoteCount === 'number' && remoteCount > 0) return remoteCount;
+      } catch {
+        /* file fallback */
+      }
+      const local = await fileStore.listRegisteredEmails();
+      return local.length;
+    },
+    getUser: async (userId) => {
+      const local = await fileStore.getUser(userId);
+      if (local) return local;
+      return withTimeout(remoteStore.getUser(userId), 4000, () => null);
+    },
+    getUserEvents: async (userId, limit) => {
+      const local = await fileStore.getUserEvents(userId, limit);
+      let remote = [];
+      try {
+        remote = await withTimeout(remoteStore.getUserEvents(userId, limit), 2000, async () => []);
+      } catch {
+        remote = [];
+      }
+      const byId = new Map();
+      for (const event of [...remote, ...local]) {
+        const key = event?.id || `${event?.createdAt}:${event?.action}:${event?.line}`;
+        if (!byId.has(key)) byId.set(key, event);
+      }
+      return [...byId.values()]
+        .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))
+        .slice(-(limit || 500));
+    },
     exportUserTxt: (userId) => withTimeout(
       remoteStore.exportUserTxt(userId),
       8000,

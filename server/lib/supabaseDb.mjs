@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'node:crypto';
+import { createTimedSupabase } from './supabaseEnv.mjs';
 
 function normalizeEmail(email) {
   return String(email).trim().toLowerCase();
@@ -27,9 +27,7 @@ function rowToUser(row) {
 }
 
 export function createSupabaseDb(url, secretKey, adminEmailsStore) {
-  const supabase = createClient(url, secretKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const supabase = createTimedSupabase(url, secretKey);
 
   async function bumpEventCount(userId, email) {
     const { data } = await supabase
@@ -321,7 +319,7 @@ export function createSupabaseDb(url, secretKey, adminEmailsStore) {
     while (true) {
       const { data, error } = await supabase
         .from('blox_accounts')
-        .select('*')
+        .select('id, email, nickname, created_at, last_seen_at, event_count, is_new_account')
         .order('last_seen_at', { ascending: false })
         .range(from, from + pageSize - 1);
 
@@ -360,8 +358,10 @@ export function createSupabaseDb(url, secretKey, adminEmailsStore) {
   }
 
   async function listRegisteredEmails() {
-    const users = await listUsers();
-    return users.map(u => u.email).sort((a, b) => a.localeCompare(b));
+    const { data, error } = await supabase.from('blox_accounts').select('email');
+    if (error) throw error;
+    return [...new Set((data ?? []).map(row => normalizeEmail(row.email)).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
   }
 
   async function getUser(userId) {

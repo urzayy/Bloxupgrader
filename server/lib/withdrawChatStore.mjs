@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createClient } from '@supabase/supabase-js';
+import { createTimedSupabase } from './supabaseEnv.mjs';
 
 function countUnreadUserMessages(messages, lastReadAt) {
   return messages.filter(message => message.senderRole === 'user' && message.createdAt > lastReadAt).length;
@@ -61,6 +61,7 @@ async function mergeTicketLists(remoteStore, fileStore, filter) {
 
 export function createFileWithdrawChatStore(chatsDir) {
   if (!fs.existsSync(chatsDir)) fs.mkdirSync(chatsDir, { recursive: true });
+  let ticketIndex = null;
 
   function ticketPath(id) {
     return path.join(chatsDir, `${id}.json`);
@@ -83,22 +84,26 @@ export function createFileWithdrawChatStore(chatsDir) {
     },
     async saveBundle(bundle) {
       fs.writeFileSync(ticketPath(bundle.ticket.id), JSON.stringify(bundle, null, 2), 'utf8');
+      ticketIndex = null;
       return bundle;
     },
     async listTickets(filter) {
-      const files = fs.readdirSync(chatsDir).filter(f => f.endsWith('.json'));
-      const tickets = [];
-      for (const file of files) {
-        try {
-          const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, file), 'utf8'));
-          if (!bundle?.ticket) continue;
-          if (filter?.userId && bundle.ticket.userId !== filter.userId) continue;
-          if (filter?.openOnly && bundle.ticket.status !== 'open') continue;
-          tickets.push(bundle.ticket);
-        } catch {
-          /* skip corrupt file */
+      let files = ticketIndex;
+      if (!files) {
+        files = [];
+        for (const file of fs.readdirSync(chatsDir).filter(name => name.endsWith('.json'))) {
+          try {
+            const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, file), 'utf8'));
+            if (bundle?.ticket) files.push(bundle.ticket);
+          } catch {
+            /* skip corrupt file */
+          }
         }
+        ticketIndex = files;
       }
+      let tickets = files;
+      if (filter?.userId) tickets = tickets.filter(ticket => ticket.userId === filter.userId);
+      if (filter?.openOnly) tickets = tickets.filter(ticket => ticket.status === 'open');
       return tickets.sort((a, b) => b.updatedAt - a.updatedAt);
     },
     async buildAdminInbox(lastReadByTicket = {}) {
@@ -109,13 +114,12 @@ export function createFileWithdrawChatStore(chatsDir) {
 }
 
 export function createSupabaseWithdrawChatStore(url, secretKey) {
-  const supabase = createClient(url, secretKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const supabase = createTimedSupabase(url, secretKey);
 
   async function listBundles(filter) {
     let query = supabase.from('blox_withdraw_chats').select('bundle');
     if (filter?.userId) query = query.eq('user_id', filter.userId);
+    else query = query.order('updated_at', { ascending: false }).limit(filter?.openOnly ? 80 : 200);
     const { data, error } = await query;
     if (error) throw error;
     let bundles = (data ?? []).map(row => row.bundle).filter(Boolean);
@@ -207,10 +211,15 @@ export function createHybridWithdrawChatStore(fileStore, remoteStore) {
       return bundle;
     },
     async listTickets(filter) {
-      return mergeTicketLists(remoteStore, fileStore, filter);
+      try {
+        return await remoteStore.listTickets(filter);
+      } catch (error) {
+        console.error('[withdraw-chat] remote list failed, using file:', supabaseErrorMessage(error));
+        return fileStore.listTickets(filter);
+      }
     },
     async buildAdminInbox(lastReadByTicket = {}) {
-      const tickets = await mergeTicketLists(remoteStore, fileStore, { openOnly: true });
+      const tickets = await this.listTickets({ openOnly: true });
       const items = [];
       for (const ticket of tickets) {
         const bundle = await loadMergedBundle(ticket.id);

@@ -504,7 +504,7 @@ export default function ProdApp() {
     };
 
     void syncWithdrawState();
-    const id = setInterval(() => { void syncWithdrawState(); }, 3000);
+    const id = setInterval(() => { void syncWithdrawState(); }, 8000);
     return () => clearInterval(id);
   }, [user, applyWithdrawCompletion, applyDepositCompletion]);
 

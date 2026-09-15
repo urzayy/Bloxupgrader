@@ -7,11 +7,12 @@
     "dev": "node scripts/generate-feed-catalog.mjs && vite",
     "build": "node scripts/generate-feed-catalog.mjs && tsc -b && vite build",
     "generate:cases": "node scripts/generate-case-catalog.mjs",
+    "restore:backup": "node scripts/restore-cluster-backup.mjs",
     "start": "node scripts/generate-feed-catalog.mjs && node server.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8",
+    "@supabase/supabase-js": "^2.110.4",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "framer-motion": "^11.15.0",
