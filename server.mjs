@@ -124,13 +124,16 @@ const withdrawChatStore = createWithdrawChatStore({ chatsDir: CHATS_DIR });
 console.log(`[withdraw-chat] using ${withdrawChatStore.type} store`);
 console.log(`[data] DATA_DIR=${DATA_DIR}`);
 
-for (const entry of durableDirs) {
-  const persist = () => entry.handle.persist();
-  try {
-    fs.watch(entry.dir, { recursive: true }, persist);
-  } catch {
-    fs.watch(entry.dir, persist);
-  }
+if (durableJsonEnabled()) {
+  setInterval(() => {
+    for (const entry of durableDirs) {
+      try {
+        entry.handle.persist();
+      } catch {
+        /* ignore backup errors */
+      }
+    }
+  }, 15_000).unref?.();
 }
 let storageStatus = { ok: false, path: userStore.type === 'supabase' ? 'supabase' : USER_DB_DIR };
 
@@ -1612,9 +1615,12 @@ setInterval(() => {
   }
 }, 3500);
 
-app.listen(PORT, async () => {
-  await refreshStorageStatus();
-  console.log(`[BloxUpgrader.com] ${SITE_URL}`);
-  console.log(`[UserDB] backend=${userStore.type ?? 'file'} path=${storageStatus.path}`);
-  console.log(`[UserDB] storage ${storageStatus.ok ? 'OK' : 'FAILED'}${storageStatus.error ? `: ${storageStatus.error}` : ''}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[BloxUpgrader.com] listening on 0.0.0.0:${PORT} ${SITE_URL}`);
+  void refreshStorageStatus().then(() => {
+    console.log(`[UserDB] backend=${userStore.type ?? 'file'} path=${storageStatus.path}`);
+    console.log(`[UserDB] storage ${storageStatus.ok ? 'OK' : 'FAILED'}${storageStatus.error ? `: ${storageStatus.error}` : ''}`);
+  }).catch((error) => {
+    console.error('[UserDB] status check failed', error instanceof Error ? error.message : error);
+  });
 });
