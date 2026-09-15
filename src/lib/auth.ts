@@ -324,7 +324,7 @@ export async function loginOrRegister(
     }
     const session = sessionFromAccount(existing);
     saveSession(session);
-    await loginAccountOnServer({
+    void loginAccountOnServer({
       userId: existing.id,
       email: existing.email,
       nickname: existing.nickname,
@@ -332,7 +332,8 @@ export async function loginOrRegister(
     return { ok: true, session };
   }
 
-  if (!serverSession.notFound) {
+  const serverUnreachable = !serverSession.ok && !serverSession.notFound && !serverSession.wrongPassword;
+  if (!serverSession.notFound && !serverUnreachable) {
     return { ok: false, error: 'Could not log in. Please try again.' };
   }
 
@@ -364,13 +365,7 @@ export async function loginOrRegister(
   saveAccounts([...accounts, account]);
   const session = sessionFromAccount(account);
   saveSession(session);
-  const registered = await registerAccountOnServer(account);
-  if (registered === 'conflict') {
-    saveSession(null);
-    const withoutNew = accounts.filter(a => a.id !== account.id);
-    saveAccounts(withoutNew);
-    return { ok: false, error: 'This account already exists. Log in with your email.' };
-  }
+  void registerAccountOnServer(account);
   return { ok: true, session, isNewAccount: true };
 }
 

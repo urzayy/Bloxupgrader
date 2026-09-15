@@ -441,7 +441,10 @@ app.post('/api/auth/session', async (req, res) => {
       sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
       return;
     }
-    const auth = await userStore.authenticateAccount({ email: normalizedEmail, password });
+    const auth = await Promise.race([
+      userStore.authenticateAccount({ email: normalizedEmail, password }),
+      new Promise(resolve => setTimeout(() => resolve({ ok: false, notFound: true }), 7000)),
+    ]);
     if (auth.notFound) {
       sendJson(res, 404, { ok: false, notFound: true });
       return;
@@ -450,7 +453,15 @@ app.post('/api/auth/session', async (req, res) => {
       sendJson(res, 401, { ok: false, error: 'wrong_password' });
       return;
     }
-    const playerState = await playerStateStore.getPlayerStateByEmail(normalizedEmail);
+    let playerState = null;
+    try {
+      playerState = await Promise.race([
+        playerStateStore.getPlayerStateByEmail(normalizedEmail),
+        new Promise(resolve => setTimeout(() => resolve(null), 3000)),
+      ]);
+    } catch {
+      playerState = null;
+    }
     sendJson(res, 200, {
       ok: true,
       user: {
