@@ -1,4 +1,5 @@
 import type { PlayerStateSnapshot } from './playerStateApi';
+import { clearSessionToken, saveSessionToken, sessionAuthHeaders, withSessionToken } from './sessionToken';
 
 export interface SyncUserPayload {
   userId: string;
@@ -20,8 +21,8 @@ async function postJson(url: string, body: unknown, attempts = 1): Promise<Respo
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(withSessionToken((body ?? {}) as Record<string, unknown>)),
         signal: AbortSignal.timeout(4000),
       });
       if (res.ok || res.status === 409) return res;
@@ -53,6 +54,7 @@ export interface ServerSessionResult {
   wrongPassword?: boolean;
   user?: ServerSessionUser;
   playerState?: PlayerStateSnapshot | null;
+  sessionToken?: string | null;
 }
 
 export async function requestServerSession(
@@ -72,6 +74,7 @@ export async function requestServerSession(
       error?: string;
       user?: ServerSessionUser;
       playerState?: PlayerStateSnapshot | null;
+      sessionToken?: string;
     };
     if (res.status === 404 || data.notFound) {
       return { ok: false, notFound: true };
@@ -82,10 +85,12 @@ export async function requestServerSession(
     if (!res.ok || !data.ok || !data.user?.userId) {
       return { ok: false };
     }
+    if (data.sessionToken) saveSessionToken(data.sessionToken);
     return {
       ok: true,
       user: data.user,
       playerState: data.playerState ?? null,
+      sessionToken: data.sessionToken ?? null,
     };
   } catch {
     return { ok: false };
@@ -114,7 +119,12 @@ export async function registerAccountOnServer(account: {
   });
   if (!res) return 'failed';
   if (res.status === 409) return 'conflict';
-  return res.ok ? 'ok' : 'failed';
+  if (res.ok) {
+    const data = await res.json().catch(() => ({})) as { sessionToken?: string };
+    if (data.sessionToken) saveSessionToken(data.sessionToken);
+    return 'ok';
+  }
+  return 'failed';
 }
 
 export async function loginAccountOnServer(payload: SyncUserPayload): Promise<boolean> {
@@ -131,8 +141,8 @@ export async function logEventToDb(payload: LogEventPayload): Promise<void> {
   try {
     await fetch('/api/user-log', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(withSessionToken(payload as unknown as Record<string, unknown>)),
     });
   } catch {
     /* offline */
@@ -160,7 +170,9 @@ export interface DbUserEvent {
 }
 
 export async function fetchDbUsers(adminEmail: string): Promise<DbUserRecord[]> {
-  const res = await fetch(`/api/admin/user-db/users?adminEmail=${encodeURIComponent(adminEmail)}`);
+  const res = await fetch(`/api/admin/user-db/users?adminEmail=${encodeURIComponent(adminEmail)}`, {
+    headers: sessionAuthHeaders(),
+  });
   if (!res.ok) throw new Error('Could not load users');
   const data = await res.json() as { users: DbUserRecord[] };
   return data.users;
@@ -172,6 +184,7 @@ export async function fetchDbUserDetail(
 ): Promise<{ user: DbUserRecord; events: DbUserEvent[] }> {
   const res = await fetch(
     `/api/admin/user-db/users/${encodeURIComponent(userId)}?adminEmail=${encodeURIComponent(adminEmail)}`,
+    { headers: sessionAuthHeaders() },
   );
   if (!res.ok) throw new Error('Could not load user');
   return res.json() as Promise<{ user: DbUserRecord; events: DbUserEvent[] }>;
@@ -194,7 +207,11 @@ export interface DbStatus {
 }
 
 export async function fetchDbStatus(adminEmail: string): Promise<DbStatus> {
-  const res = await fetch(`/api/admin/user-db/status?adminEmail=${encodeURIComponent(adminEmail)}`);
+  const res = await fetch(`/api/admin/user-db/status?adminEmail=${encodeURIComponent(adminEmail)}`, {
+    headers: sessionAuthHeaders(),
+  });
   if (!res.ok) throw new Error('Could not load database status');
   return res.json() as Promise<DbStatus>;
 }
+
+export { clearSessionToken };

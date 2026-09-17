@@ -1,3 +1,4 @@
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
 export interface PlayerAnnouncement {
   id: string;
   title: string;
@@ -8,14 +9,14 @@ export interface PlayerAnnouncement {
 }
 
 export async function fetchActiveAnnouncement(): Promise<PlayerAnnouncement | null> {
-  const res = await fetch('/api/announcement/active');
+  const res = await fetch('/api/announcement/active', { headers: sessionAuthHeaders() });
   if (!res.ok) return null;
   const data = await res.json() as { announcement?: PlayerAnnouncement | null };
   return data.announcement ?? null;
 }
 
 export async function fetchAdminAnnouncement(adminEmail: string): Promise<PlayerAnnouncement | null> {
-  const res = await fetch(`/api/admin/announcement?adminEmail=${encodeURIComponent(adminEmail)}`);
+  const res = await fetch(`/api/admin/announcement?adminEmail=${encodeURIComponent(adminEmail)}`, { headers: sessionAuthHeaders() });
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(data.error === 'forbidden' ? 'Access denied.' : 'Could not load announcement.');
@@ -31,8 +32,8 @@ export async function publishAnnouncement(
 ): Promise<PlayerAnnouncement> {
   const res = await fetch('/api/admin/announcement', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ adminEmail, title, message }),
+    headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(withSessionToken({ adminEmail, title, message } as Record<string, unknown>)),
   });
   const data = await res.json().catch(() => ({})) as { error?: string; announcement?: PlayerAnnouncement };
   if (!res.ok) {
@@ -51,8 +52,8 @@ export async function publishAnnouncement(
 export async function clearAnnouncement(adminEmail: string): Promise<void> {
   const res = await fetch('/api/admin/announcement/clear', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ adminEmail }),
+    headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(withSessionToken({ adminEmail } as Record<string, unknown>)),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as { error?: string };

@@ -1,4 +1,5 @@
 import type { Skin } from '../data/skins';
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
 
 export interface InventoryGrantRecord {
   id: string;
@@ -11,8 +12,11 @@ export interface InventoryGrantRecord {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     ...init,
+    headers: sessionAuthHeaders({
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -37,12 +41,12 @@ export async function createInventoryGrant(
 ): Promise<InventoryGrantRecord[]> {
   const data = await api<{ grants: InventoryGrantRecord[] }>('/api/inventory-grants', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       targetEmail: normalizeGrantEmail(targetEmail),
       grantedBy: normalizeGrantEmail(grantedBy),
       skin,
       quantity,
-    }),
+    } as Record<string, unknown>)),
   });
   return data.grants;
 }
@@ -59,9 +63,9 @@ export async function acknowledgeInventoryGrants(email: string, grantIds: string
   if (!grantIds.length) return;
   await api('/api/inventory-grants/ack', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       email: normalizeGrantEmail(email),
       grantIds,
-    }),
+    } as Record<string, unknown>)),
   });
 }

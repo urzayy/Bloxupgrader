@@ -1,5 +1,6 @@
 import type { Skin } from '../data/skins';
 import type { GiveawayPeriod } from './giveaways';
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
 
 export type GiveawayStatus = 'active' | 'closed';
 
@@ -51,7 +52,7 @@ export interface GiveawaysStateResponse {
 
 export async function fetchGiveawaysState(): Promise<GiveawaysStateResponse | null> {
   try {
-    const res = await fetch('/api/giveaways');
+    const res = await fetch('/api/giveaways', { headers: sessionAuthHeaders() });
     if (!res.ok) return null;
     return await res.json() as GiveawaysStateResponse;
   } catch {
@@ -68,7 +69,7 @@ export async function adminOpenGiveaway(payload: {
   try {
     const res = await fetch('/api/admin/giveaways/open', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({})) as { error?: string };
@@ -92,7 +93,7 @@ export async function adminCloseGiveaway(payload: {
   try {
     const res = await fetch('/api/admin/giveaways/close', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({})) as {
@@ -131,7 +132,7 @@ export interface GiveawayPendingWin {
 
 export async function fetchGiveawayWinners(limit = 24): Promise<GiveawayWinnerRecord[]> {
   try {
-    const res = await fetch(`/api/giveaways/winners?limit=${limit}`);
+    const res = await fetch(`/api/giveaways/winners?limit=${limit}`, { headers: sessionAuthHeaders() });
     if (!res.ok) return [];
     const data = await res.json() as { winners?: GiveawayWinnerRecord[] };
     return data.winners ?? [];
@@ -142,7 +143,7 @@ export async function fetchGiveawayWinners(limit = 24): Promise<GiveawayWinnerRe
 
 export async function fetchPendingGiveawayWins(userId: string): Promise<GiveawayPendingWin[]> {
   try {
-    const res = await fetch(`/api/giveaways/pending-win?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`/api/giveaways/pending-win?userId=${encodeURIComponent(userId)}`, { headers: sessionAuthHeaders() });
     if (!res.ok) return [];
     const data = await res.json() as { pending?: GiveawayPendingWin[] };
     return data.pending ?? [];
@@ -155,8 +156,8 @@ export async function ackGiveawayWin(userId: string, pendingId: string): Promise
   try {
     const res = await fetch('/api/giveaways/pending-win/ack', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, pendingId }),
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(withSessionToken({ userId, pendingId } as Record<string, unknown>)),
     });
     return res.ok;
   } catch {
@@ -170,7 +171,7 @@ export async function fetchGiveawayDetail(
 ): Promise<GiveawayDetailResponse | null> {
   try {
     const query = userId ? `?userId=${encodeURIComponent(userId)}` : '';
-    const res = await fetch(`/api/giveaways/${period}${query}`);
+    const res = await fetch(`/api/giveaways/${period}${query}`, { headers: sessionAuthHeaders() });
     if (!res.ok) return null;
     return await res.json() as GiveawayDetailResponse;
   } catch {
@@ -188,7 +189,7 @@ export async function joinGiveaway(payload: {
   try {
     const res = await fetch('/api/giveaways/join', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({})) as { error?: string; alreadyJoined?: boolean };
@@ -209,7 +210,7 @@ export async function recordGiveawayDeposit(payload: {
   try {
     const res = await fetch('/api/giveaways/deposit-record', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
     });
     return res.ok;

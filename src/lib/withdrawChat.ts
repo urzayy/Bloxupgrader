@@ -4,6 +4,7 @@ import { getDisplayName } from './auth';
 import { formatUSD } from './wheelMath';
 import { getAdminLastReadMap } from './adminChatRead';
 import { calcRobuxDepositCredit } from './robuxDeposit';
+import { sessionAuthHeaders } from './sessionToken';
 
 export type SupportTicketType = 'withdraw' | 'deposit' | 'help';
 export type WithdrawTicketStatus = 'open' | 'completed' | 'cancelled';
@@ -118,8 +119,11 @@ function summarizeSkin(skin: Skin): WithdrawSkinSummary {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     ...init,
+    headers: sessionAuthHeaders({
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');

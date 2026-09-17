@@ -1,3 +1,4 @@
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
 export interface ClearAccountResult {
   ok: boolean;
   email: string;
@@ -12,11 +13,11 @@ export async function clearAccountByEmail(
 ): Promise<ClearAccountResult> {
   const res = await fetch('/api/admin/clear-account', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(withSessionToken({
       adminEmail,
       email: targetEmail.trim().toLowerCase(),
-    }),
+    } as Record<string, unknown>)),
   });
 
   const data = await res.json().catch(() => ({})) as ClearAccountResult & { message?: string; error?: string };

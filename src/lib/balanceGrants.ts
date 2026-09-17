@@ -1,4 +1,5 @@
 import { isValidGrantEmail, normalizeGrantEmail } from './inventoryGrants';
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
 
 export interface BalanceGrantRecord {
   id: string;
@@ -11,8 +12,11 @@ export interface BalanceGrantRecord {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     ...init,
+    headers: sessionAuthHeaders({
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -30,11 +34,11 @@ export async function createBalanceGrant(
 ): Promise<BalanceGrantRecord> {
   const data = await api<{ grant: BalanceGrantRecord }>('/api/balance-grants', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       targetEmail: normalizeGrantEmail(targetEmail),
       grantedBy: normalizeGrantEmail(grantedBy),
       amount: Math.floor(amount),
-    }),
+    } as Record<string, unknown>)),
   });
   return data.grant;
 }
@@ -51,9 +55,9 @@ export async function acknowledgeBalanceGrants(email: string, grantIds: string[]
   if (!grantIds.length) return;
   await api('/api/balance-grants/ack', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       email: normalizeGrantEmail(email),
       grantIds,
-    }),
+    } as Record<string, unknown>)),
   });
 }

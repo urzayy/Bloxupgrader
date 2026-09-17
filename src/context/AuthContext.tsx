@@ -7,8 +7,6 @@ import {
   getProfileLabel,
   pushAccountToServer,
   updateNickname as saveNickname,
-  isAdmin as checkIsAdmin,
-  isCreator as checkIsCreator,
   type Session,
 } from '../lib/auth';
 import { setEssentialCookiesEnabled } from '../lib/cookies';
@@ -45,8 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return session;
   });
   const [loginOpen, setLoginOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(() => checkIsAdmin(user));
-  const [isCreator, setIsCreator] = useState(() => checkIsCreator(user));
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isCreator, setIsCreator] = useState(false);
 
   const refreshAdminStatus = useCallback(async () => {
     if (!user) {
@@ -120,6 +118,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       appendUserLog({ userId: user.userId, email: user.email }, 'AUTH.logout', { email: user.email });
     }
     clearSession();
+    setIsAdmin(false);
+    setIsCreator(false);
     setUser(null);
   }, [user]);
 

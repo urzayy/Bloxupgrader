@@ -12,6 +12,11 @@ import {
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createPlayerStateStore } from './server/lib/playerStateStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import {
+  createSessionToken,
+  readSessionTokenFromRequest,
+  verifySessionToken,
+} from './server/lib/sessionTokens.mjs';
 import { clearAccountByEmail as resetAccountByEmail, resetPlayerProgressByEmail } from './server/lib/accountReset.mjs';
 import { createAccountResetMarkerStore } from './server/lib/accountResetMarker.mjs';
 import { createAccountBanStore } from './server/lib/accountBanStore.mjs';
@@ -114,6 +119,43 @@ const playerStateStore = createPlayerStateStore({ playerStateDir: PLAYER_STATE_D
 const resetMarkerStore = createAccountResetMarkerStore(ACCOUNT_RESETS_DIR);
 const banStore = createAccountBanStore(ACCOUNT_BANS_DIR);
 const profilePhotoStore = createProfilePhotoStore(PROFILE_PHOTOS_DIR);
+
+function requireUserSession(req, res, { email } = {}) {
+  const token = readSessionTokenFromRequest(req);
+  const session = verifySessionToken(token);
+  if (!session) {
+    sendJson(res, 401, { error: 'auth_required', message: 'Sign in again.' });
+    return null;
+  }
+  if (email && String(email).trim().toLowerCase() !== session.email) {
+    sendJson(res, 403, { error: 'forbidden', message: 'Session mismatch.' });
+    return null;
+  }
+  return session;
+}
+
+function requireAdminSession(req, res) {
+  const session = requireUserSession(req, res);
+  if (!session) return null;
+  if (!adminEmailsStore.isAdminEmail(session.email)) {
+    sendJson(res, 403, { error: 'forbidden', message: 'Admin only.' });
+    return null;
+  }
+  return session;
+}
+
+function requireCreatorSession(req, res) {
+  const session = requireUserSession(req, res);
+  if (!session) return null;
+  if (!adminEmailsStore.isCreatorEmail(session.email)) {
+    sendJson(res, 403, { error: 'forbidden', message: 'Creator only.' });
+    return null;
+  }
+  return session;
+}
+
+const MAX_BALANCE_HARD_CAP = 2_000_000;
+const MAX_BALANCE_SYNC_INCREASE = 250_000;
 const giveawayStore = createGiveawayStore(GIVEAWAYS_DIR, GRANTS_DIR);
 const caseBattleStore = createCaseBattleStore(CASE_BATTLES_DIR);
 const withdrawChatStore = createWithdrawChatStore({ chatsDir: CHATS_DIR });
@@ -433,7 +475,11 @@ app.post('/api/auth/register', async (req, res) => {
       isNewAccount: true,
     });
     if (result?.line) appendUserTxtLog(email, result.line);
-    sendJson(res, 200, { ok: true, user: result?.user ?? null });
+    sendJson(res, 200, {
+      ok: true,
+      user: result?.user ?? null,
+      sessionToken: createSessionToken({ userId, email: normalizedEmail }),
+    });
   } catch (error) {
     console.error('[auth/register]', error);
     sendJson(res, 500, { error: 'error' });
@@ -482,6 +528,7 @@ app.post('/api/auth/session', async (req, res) => {
         salt: auth.salt,
       },
       playerState,
+      sessionToken: createSessionToken({ userId: auth.userId, email: auth.email }),
     });
   } catch (error) {
     console.error('[auth/session]', error);
@@ -549,6 +596,8 @@ app.post('/api/player-state/sync', async (req, res) => {
       return;
     }
     const normalizedEmail = String(email).trim().toLowerCase();
+    const session = requireUserSession(req, res, { email: normalizedEmail });
+    if (!session) return;
     if (banStore.isBanned(normalizedEmail)) {
       sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
       return;
@@ -570,7 +619,29 @@ app.post('/api/player-state/sync', async (req, res) => {
       resetMarkerStore.clearReset(normalizedEmail);
     }
 
-    const state = await playerStateStore.savePlayerState({ userId, email, balance, inventory });
+    let nextBalance = Math.max(0, Math.floor(Number(balance) || 0));
+    let nextInventory = Array.isArray(inventory) ? inventory.slice(0, 500) : [];
+    const existing = await playerStateStore.getPlayerStateByEmail(normalizedEmail);
+    const pendingGrants = loadBalanceGrantStore(normalizedEmail).grants
+      .filter(grant => grant.status === 'pending')
+      .reduce((sum, grant) => sum + Math.max(0, Math.floor(Number(grant.amount) || 0)), 0);
+    const existingBalance = Math.max(0, Math.floor(Number(existing?.balance) || 0));
+    const maxAllowed = Math.min(
+      MAX_BALANCE_HARD_CAP,
+      existingBalance + pendingGrants + MAX_BALANCE_SYNC_INCREASE,
+    );
+    if (nextBalance > maxAllowed) {
+      console.warn(`[security] blocked balance inflate email=${normalizedEmail} from=${existingBalance} to=${nextBalance} max=${maxAllowed}`);
+      nextBalance = Math.min(existingBalance, maxAllowed);
+    }
+    if (nextBalance > MAX_BALANCE_HARD_CAP) nextBalance = MAX_BALANCE_HARD_CAP;
+
+    const state = await playerStateStore.savePlayerState({
+      userId,
+      email: normalizedEmail,
+      balance: nextBalance,
+      inventory: nextInventory,
+    });
     sendJson(res, 200, { ok: true, state });
   } catch (error) {
     console.error('[player-state/sync]', error);
@@ -689,11 +760,10 @@ app.post('/api/giveaways/deposit-record', (req, res) => {
 });
 
 app.post('/api/admin/giveaways/open', (req, res) => {
-  const { adminEmail, period, skin, depositRequirement } = req.body ?? {};
-  if (!userStore.isAdminEmail(String(adminEmail ?? '').trim())) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
+  const adminEmail = __adminSession.email;
+  const { period, skin, depositRequirement } = req.body ?? {};
   const result = giveawayStore.openGiveaway({
     period,
     skin,
@@ -708,11 +778,10 @@ app.post('/api/admin/giveaways/open', (req, res) => {
 });
 
 app.post('/api/admin/giveaways/close', (req, res) => {
-  const { adminEmail, period, pickWinner } = req.body ?? {};
-  if (!userStore.isAdminEmail(String(adminEmail ?? '').trim())) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
+  const adminEmail = __adminSession.email;
+  const { period, pickWinner } = req.body ?? {};
   const result = giveawayStore.closeGiveaway({
     period,
     pickWinner: Boolean(pickWinner),
@@ -785,11 +854,10 @@ app.get('/api/account-ban-status', (req, res) => {
 
 app.post('/api/admin/ban-user', (req, res) => {
   try {
-    const { adminEmail, email, days, reason } = req.body ?? {};
-    if (!userStore.isAdminEmail(String(adminEmail ?? '').trim())) {
-      sendJson(res, 403, { error: 'forbidden' });
-      return;
-    }
+    const __adminSession = requireAdminSession(req, res);
+    if (!__adminSession) return;
+    const adminEmail = __adminSession.email;
+    const { email, days, reason } = req.body ?? {};
     const targetEmail = String(email ?? '').trim().toLowerCase();
     if (!targetEmail) {
       sendJson(res, 400, { error: 'email required' });
@@ -813,11 +881,10 @@ app.post('/api/admin/ban-user', (req, res) => {
 
 app.post('/api/admin/unban-user', (req, res) => {
   try {
-    const { adminEmail, email } = req.body ?? {};
-    if (!userStore.isAdminEmail(String(adminEmail ?? '').trim())) {
-      sendJson(res, 403, { error: 'forbidden' });
-      return;
-    }
+    const __adminSession = requireAdminSession(req, res);
+    if (!__adminSession) return;
+    const adminEmail = __adminSession.email;
+    const { email } = req.body ?? {};
     const targetEmail = String(email ?? '').trim().toLowerCase();
     if (!targetEmail) {
       sendJson(res, 400, { error: 'email required' });
@@ -832,37 +899,36 @@ app.post('/api/admin/unban-user', (req, res) => {
 });
 
 app.get('/api/admin/bans', (req, res) => {
-  const adminEmail = req.query.adminEmail?.trim() ?? '';
-  if (!userStore.isAdminEmail(adminEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
   banStore.purgeExpired();
   sendJson(res, 200, { bans: banStore.listActiveBans() });
 });
 
 app.get('/api/admin/status', (req, res) => {
-  const email = String(req.query.email ?? '').trim();
+  const email = String(req.query.email ?? '').trim().toLowerCase();
+  const session = verifySessionToken(readSessionTokenFromRequest(req));
+  const authed = Boolean(session && session.email === email);
   sendJson(res, 200, {
-    isAdmin: adminEmailsStore.isAdminEmail(email),
-    isCreator: adminEmailsStore.isCreatorEmail(email),
+    isAdmin: authed && adminEmailsStore.isAdminEmail(email),
+    isCreator: authed && adminEmailsStore.isCreatorEmail(email),
   });
 });
 
 app.get('/api/admin/emails', (req, res) => {
-  const creatorEmail = String(req.query.creatorEmail ?? '').trim();
-  if (!adminEmailsStore.isCreatorEmail(creatorEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __creatorSession = requireCreatorSession(req, res);
+  if (!__creatorSession) return;
   sendJson(res, 200, { emails: adminEmailsStore.listAdmins() });
 });
 
 app.post('/api/admin/emails/add', (req, res) => {
   try {
-    const { creatorEmail, email } = req.body ?? {};
+    const __creatorSession = requireCreatorSession(req, res);
+    if (!__creatorSession) return;
+    const creatorEmail = __creatorSession.email;
+    const { email } = req.body ?? {};
     const result = adminEmailsStore.addAdmin(
-      String(creatorEmail ?? '').trim(),
+      creatorEmail,
       String(email ?? '').trim(),
     );
     sendJson(res, 200, { ok: true, ...result });
@@ -875,9 +941,12 @@ app.post('/api/admin/emails/add', (req, res) => {
 
 app.post('/api/admin/emails/remove', (req, res) => {
   try {
-    const { creatorEmail, email } = req.body ?? {};
+    const __creatorSession = requireCreatorSession(req, res);
+    if (!__creatorSession) return;
+    const creatorEmail = __creatorSession.email;
+    const { email } = req.body ?? {};
     const result = adminEmailsStore.removeAdmin(
-      String(creatorEmail ?? '').trim(),
+      creatorEmail,
       String(email ?? '').trim(),
     );
     sendJson(res, 200, { ok: true, ...result });
@@ -890,11 +959,9 @@ app.post('/api/admin/emails/remove', (req, res) => {
 
 app.post('/api/admin/reset-password', async (req, res) => {
   try {
-    const { creatorEmail, email, password } = req.body ?? {};
-    if (!adminEmailsStore.isCreatorEmail(String(creatorEmail ?? '').trim())) {
-      sendJson(res, 403, { error: 'forbidden' });
-      return;
-    }
+    const __creatorSession = requireCreatorSession(req, res);
+    if (!__creatorSession) return;
+    const { email, password } = req.body ?? {};
     const targetEmail = String(email ?? '').trim().toLowerCase();
     if (!targetEmail) {
       sendJson(res, 400, { error: 'email required' });
@@ -920,12 +987,9 @@ app.post('/api/admin/reset-password', async (req, res) => {
 
 app.get('/api/admin/player-state', async (req, res) => {
   try {
-    const adminEmail = req.query.adminEmail?.trim() ?? '';
+    const __adminSession = requireAdminSession(req, res);
+    if (!__adminSession) return;
     const email = req.query.email?.trim() ?? '';
-    if (!playerStateStore.isAdminEmail(adminEmail)) {
-      sendJson(res, 403, { error: 'forbidden' });
-      return;
-    }
     if (!email) {
       sendJson(res, 400, { error: 'email required' });
       return;
@@ -947,11 +1011,9 @@ app.get('/api/admin/player-state', async (req, res) => {
 
 app.post('/api/admin/clear-account', async (req, res) => {
   try {
-    const { adminEmail, email } = req.body ?? {};
-    if (!userStore.isAdminEmail(String(adminEmail ?? '').trim())) {
-      sendJson(res, 403, { error: 'forbidden' });
-      return;
-    }
+    const __adminSession = requireAdminSession(req, res);
+    if (!__adminSession) return;
+    const { email } = req.body ?? {};
     if (!email) {
       sendJson(res, 400, { error: 'email required' });
       return;
@@ -977,11 +1039,8 @@ app.post('/api/admin/clear-account', async (req, res) => {
 
 app.post('/api/admin/reset-all-progress', async (req, res) => {
   try {
-    const { adminEmail } = req.body ?? {};
-    if (!userStore.isAdminEmail(String(adminEmail ?? '').trim())) {
-      sendJson(res, 403, { error: 'forbidden' });
-      return;
-    }
+    const __adminSession = requireAdminSession(req, res);
+    if (!__adminSession) return;
 
     const registeredEmails = await userStore.listRegisteredEmails();
     const skippedAdmins = [];
@@ -1018,11 +1077,8 @@ app.post('/api/admin/reset-all-progress', async (req, res) => {
 });
 
 app.get('/api/admin/user-db/status', async (req, res) => {
-  const adminEmail = String(req.query.adminEmail ?? '');
-  if (!userStore.isAdminEmail(adminEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
   await refreshStorageStatus();
   const users = await userStore.listUsers();
   const emails = await userStore.listRegisteredEmails();
@@ -1043,20 +1099,14 @@ app.get('/api/admin/user-db/status', async (req, res) => {
 });
 
 app.get('/api/admin/user-db/users', async (req, res) => {
-  const adminEmail = String(req.query.adminEmail ?? '');
-  if (!userStore.isAdminEmail(adminEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
   sendJson(res, 200, { users: await userStore.listUsers() });
 });
 
 app.get('/api/admin/user-db/users/:userId', async (req, res) => {
-  const adminEmail = String(req.query.adminEmail ?? '');
-  if (!userStore.isAdminEmail(adminEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
   const user = await userStore.getUser(req.params.userId);
   if (!user) {
     sendJson(res, 404, { error: 'not found' });
@@ -1066,11 +1116,8 @@ app.get('/api/admin/user-db/users/:userId', async (req, res) => {
 });
 
 app.get('/api/admin/user-db/users/:userId/export.txt', async (req, res) => {
-  const adminEmail = String(req.query.adminEmail ?? '');
-  if (!userStore.isAdminEmail(adminEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
   if (!(await userStore.getUser(req.params.userId))) {
     sendJson(res, 404, { error: 'not found' });
     return;
@@ -1085,20 +1132,16 @@ app.get('/api/promo-codes/validate', (req, res) => {
 });
 
 app.get('/api/admin/promo-codes', (req, res) => {
-  const adminEmail = String(req.query.adminEmail ?? '');
-  if (!userStore.isAdminEmail(adminEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
   sendJson(res, 200, { codes: promoCodeStore.listCodes() });
 });
 
 app.post('/api/admin/promo-codes', (req, res) => {
   const body = req.body ?? {};
-  if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
+  body.adminEmail = __adminSession.email;
   const result = promoCodeStore.createCode({
     code: String(body.code ?? ''),
     percent: Number(body.percent),
@@ -1114,11 +1157,8 @@ app.post('/api/admin/promo-codes', (req, res) => {
 });
 
 app.delete('/api/admin/promo-codes/:code', (req, res) => {
-  const adminEmail = String(req.query.adminEmail ?? '');
-  if (!userStore.isAdminEmail(adminEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
   const result = promoCodeStore.deleteCode(req.params.code ?? '');
   if (result.error) {
     sendJson(res, 400, { error: result.error });
@@ -1132,20 +1172,16 @@ app.get('/api/announcement/active', (_req, res) => {
 });
 
 app.get('/api/admin/announcement', (req, res) => {
-  const adminEmail = String(req.query.adminEmail ?? '').trim();
-  if (!userStore.isAdminEmail(adminEmail)) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
   sendJson(res, 200, { announcement: announcementStore.getActive() });
 });
 
 app.post('/api/admin/announcement', (req, res) => {
   const body = req.body ?? {};
-  if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
+  body.adminEmail = __adminSession.email;
   const result = announcementStore.publish({
     title: body.title,
     message: body.message,
@@ -1160,10 +1196,9 @@ app.post('/api/admin/announcement', (req, res) => {
 
 app.post('/api/admin/announcement/clear', (req, res) => {
   const body = req.body ?? {};
-  if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-    sendJson(res, 403, { error: 'forbidden' });
-    return;
-  }
+  const __adminSession = requireAdminSession(req, res);
+  if (!__adminSession) return;
+  body.adminEmail = __adminSession.email;
   sendJson(res, 200, announcementStore.clear());
 });
 
@@ -1216,10 +1251,12 @@ app.post('/api/inventory-grants/ack', (req, res) => {
 });
 
 app.post('/api/inventory-grants', (req, res) => {
+  const adminSession = requireAdminSession(req, res);
+  if (!adminSession) return;
   const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
-  const grantedBy = req.body?.grantedBy?.trim().toLowerCase();
+  const grantedBy = adminSession.email;
   const skin = req.body?.skin;
-  if (!targetEmail || !skin?.id || !grantedBy) {
+  if (!targetEmail || !skin?.id) {
     sendJson(res, 400, { error: 'invalid grant' });
     return;
   }
@@ -1264,10 +1301,12 @@ app.post('/api/balance-grants/ack', (req, res) => {
 });
 
 app.post('/api/balance-grants', (req, res) => {
+  const adminSession = requireAdminSession(req, res);
+  if (!adminSession) return;
   const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
-  const grantedBy = req.body?.grantedBy?.trim().toLowerCase();
+  const grantedBy = adminSession.email;
   const amount = Number(req.body?.amount);
-  if (!targetEmail || !grantedBy || !Number.isFinite(amount) || amount <= 0) {
+  if (!targetEmail || !Number.isFinite(amount) || amount <= 0) {
     sendJson(res, 400, { error: 'invalid grant' });
     return;
   }
@@ -1288,12 +1327,17 @@ app.post('/api/balance-grants', (req, res) => {
 
 app.get('/api/withdraw/tickets', async (req, res) => {
   const userId = req.query.userId;
-  const admin = req.query.admin === '1';
+  const adminRequested = req.query.admin === '1';
   const all = req.query.all === '1';
   try {
-    const tickets = admin
-      ? await withdrawChatStore.listTickets(all ? undefined : { openOnly: true })
-      : await withdrawChatStore.listTickets(userId ? { userId } : undefined);
+    let tickets;
+    if (adminRequested) {
+      const adminSession = requireAdminSession(req, res);
+      if (!adminSession) return;
+      tickets = await withdrawChatStore.listTickets(all ? undefined : { openOnly: true });
+    } else {
+      tickets = await withdrawChatStore.listTickets(userId ? { userId } : undefined);
+    }
     sendJson(res, 200, { tickets });
   } catch (error) {
     console.error('[withdraw-chat] list tickets failed:', error);
@@ -1302,6 +1346,7 @@ app.get('/api/withdraw/tickets', async (req, res) => {
 });
 
 app.post('/api/withdraw/admin-inbox', async (req, res) => {
+  if (!requireAdminSession(req, res)) return;
   const lastReadByTicket = req.body?.lastReadByTicket ?? {};
   try {
     const items = await withdrawChatStore.buildAdminInbox(lastReadByTicket);

@@ -1,4 +1,5 @@
 import { loginAccountOnServer, registerAccountOnServer, requestServerSession } from './userDbApi';
+import { clearSessionToken } from './sessionToken';
 import { fetchAccountBanStatus } from './accountBanApi';
 import { applyPlayerStateSnapshot } from './playerStateHydration';
 import {
@@ -365,7 +366,7 @@ export async function loginOrRegister(
   saveAccounts([...accounts, account]);
   const session = sessionFromAccount(account);
   saveSession(session);
-  void registerAccountOnServer(account);
+  await registerAccountOnServer(account);
   return { ok: true, session, isNewAccount: true };
 }
 
@@ -410,20 +411,20 @@ export function updateNickname(
   return { ok: true };
 }
 
+export function isAdmin(_session: Session | null): boolean {
+  // Never trust localStorage/console. Admin UI comes only from /api/admin/status.
+  return false;
+}
+
+export function isCreator(_session: Session | null): boolean {
+  return false;
+}
+
 export function logout(): void {
   saveSession(null);
+  clearSessionToken();
 }
 
 export const CREATOR_EMAIL = 'urzay1v1@gmail.com';
 
 export const ADMIN_EMAILS = ['urzay1v1@gmail.com', 'ecruzcastillo2009@gmail.com'] as const;
-
-export function isAdmin(session: Session | null): boolean {
-  if (!session) return false;
-  return (ADMIN_EMAILS as readonly string[]).includes(session.email);
-}
-
-export function isCreator(session: Session | null): boolean {
-  if (!session) return false;
-  return session.email === CREATOR_EMAIL;
-}

@@ -1,4 +1,5 @@
 import type { Skin } from '../data/skins';
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
 
 export interface PlayerStateSnapshot {
   userId: string | null;
@@ -53,8 +54,8 @@ export async function syncPlayerState(payload: {
   try {
     const res = await fetch('/api/player-state/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(withSessionToken(payload as unknown as Record<string, unknown>)),
     });
     const data = await res.json().catch(() => ({})) as PlayerStateSyncResult & { message?: string };
     if (!res.ok) {
@@ -78,6 +79,7 @@ export async function fetchPlayerStateByEmail(
 ): Promise<PlayerStateSnapshot | null> {
   const res = await fetch(
     `/api/admin/player-state?adminEmail=${encodeURIComponent(adminEmail)}&email=${encodeURIComponent(email.trim().toLowerCase())}`,
+    { headers: sessionAuthHeaders() },
   );
   if (res.status === 404) return null;
   if (!res.ok) {

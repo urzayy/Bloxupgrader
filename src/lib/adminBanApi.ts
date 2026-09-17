@@ -1,3 +1,4 @@
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
 export interface AccountBanRecord {
   email: string;
   bannedAt: number;
@@ -16,13 +17,13 @@ export async function banUserByEmail(
 ): Promise<AccountBanRecord> {
   const res = await fetch('/api/admin/ban-user', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(withSessionToken({
       adminEmail,
       email: targetEmail.trim().toLowerCase(),
       days,
       reason: reason?.trim() || null,
-    }),
+    } as Record<string, unknown>)),
   });
   const data = await res.json().catch(() => ({})) as { ban?: AccountBanRecord; message?: string; error?: string };
   if (!res.ok) {
@@ -38,11 +39,11 @@ export async function unbanUserByEmail(
 ): Promise<{ email: string; unbanned: boolean }> {
   const res = await fetch('/api/admin/unban-user', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(withSessionToken({
       adminEmail,
       email: targetEmail.trim().toLowerCase(),
-    }),
+    } as Record<string, unknown>)),
   });
   const data = await res.json().catch(() => ({})) as { email?: string; unbanned?: boolean; message?: string; error?: string };
   if (!res.ok) {
@@ -52,7 +53,7 @@ export async function unbanUserByEmail(
 }
 
 export async function fetchActiveBans(adminEmail: string): Promise<AccountBanRecord[]> {
-  const res = await fetch(`/api/admin/bans?adminEmail=${encodeURIComponent(adminEmail)}`);
+  const res = await fetch(`/api/admin/bans?adminEmail=${encodeURIComponent(adminEmail)}`, { headers: sessionAuthHeaders() });
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as { message?: string; error?: string };
     throw new Error(data.message ?? data.error ?? 'Could not load bans.');

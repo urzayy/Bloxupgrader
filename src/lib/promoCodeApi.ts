@@ -1,3 +1,5 @@
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
+
 export interface PromoCodeEntry {
   code: string;
   percent: number;
@@ -15,8 +17,11 @@ export interface PromoCodeValidation {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     ...init,
+    headers: sessionAuthHeaders({
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as { error?: string };
@@ -45,7 +50,7 @@ export async function createAdminPromoCode(payload: {
 }): Promise<PromoCodeEntry> {
   const data = await api<{ entry: PromoCodeEntry }>('/api/admin/promo-codes', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(withSessionToken(payload as unknown as Record<string, unknown>)),
   });
   return data.entry;
 }

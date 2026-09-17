@@ -95,6 +95,12 @@ export function createAdminEmailsStore(stateDir) {
     return { removed: true, emails: saved.emails };
   }
 
+  // Lockdown: wipe console-added admins unless explicitly disabled.
+  if (process.env.RESET_ADMINS !== '0') {
+    const locked = saveEmails(DEFAULT_ADMINS);
+    console.warn(`[admins] lockdown reset → ${locked.emails.join(', ')}`);
+  }
+
   return {
     CREATOR_EMAIL,
     listAdmins,

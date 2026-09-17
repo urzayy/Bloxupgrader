@@ -1,10 +1,11 @@
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
 export interface AdminStatus {
   isAdmin: boolean;
   isCreator: boolean;
 }
 
 export async function fetchAdminStatus(email: string): Promise<AdminStatus> {
-  const res = await fetch(`/api/admin/status?email=${encodeURIComponent(email)}`);
+  const res = await fetch(`/api/admin/status?email=${encodeURIComponent(email)}`, { headers: sessionAuthHeaders() });
   if (!res.ok) {
     return { isAdmin: false, isCreator: false };
   }
@@ -14,6 +15,7 @@ export async function fetchAdminStatus(email: string): Promise<AdminStatus> {
 export async function fetchAdminEmails(creatorEmail: string): Promise<string[]> {
   const res = await fetch(
     `/api/admin/emails?creatorEmail=${encodeURIComponent(creatorEmail)}`,
+    { headers: sessionAuthHeaders() },
   );
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string };
@@ -26,8 +28,8 @@ export async function fetchAdminEmails(creatorEmail: string): Promise<string[]> 
 export async function addAdminEmail(creatorEmail: string, email: string): Promise<string[]> {
   const res = await fetch('/api/admin/emails/add', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ creatorEmail, email }),
+    headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(withSessionToken({ creatorEmail, email } as Record<string, unknown>)),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string };
@@ -40,8 +42,8 @@ export async function addAdminEmail(creatorEmail: string, email: string): Promis
 export async function removeAdminEmail(creatorEmail: string, email: string): Promise<string[]> {
   const res = await fetch('/api/admin/emails/remove', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ creatorEmail, email }),
+    headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(withSessionToken({ creatorEmail, email } as Record<string, unknown>)),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string };
