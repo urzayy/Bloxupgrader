@@ -427,6 +427,49 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  next();
+});
+
+const BLOCKED_PATH_PREFIXES = [
+  '/src',
+  '/server',
+  '/scripts',
+  '/node_modules',
+  '/.env',
+  '/.git',
+  '/user-db',
+  '/player-state',
+  '/withdraw-chats',
+  '/balance-grants',
+  '/inventory-grants',
+  '/site-state',
+  '/backup',
+];
+
+app.use((req, res, next) => {
+  const lower = req.path.toLowerCase();
+  if (
+    BLOCKED_PATH_PREFIXES.some(prefix => lower === prefix || lower.startsWith(`${prefix}/`))
+    || lower.endsWith('.map')
+    || lower.endsWith('.env')
+    || lower.includes('/.')
+  ) {
+    sendJson(res, 404, { error: 'not found' });
+    return;
+  }
+  next();
+});
+
 function appendUserTxtLog(email, line) {
   const filePath = path.join(LOGS_DIR, `${sanitizeEmail(email)}.txt`);
   if (!fs.existsSync(filePath) && line.startsWith('#')) {
@@ -544,6 +587,12 @@ app.post('/api/auth/login', async (req, res) => {
       return;
     }
     const normalizedEmail = String(email).trim().toLowerCase();
+    const session = requireUserSession(req, res, { email: normalizedEmail });
+    if (!session) return;
+    if (session.userId !== String(userId)) {
+      sendJson(res, 403, { error: 'forbidden', message: 'Session mismatch.' });
+      return;
+    }
     if (banStore.isBanned(normalizedEmail)) {
       sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
       return;
@@ -564,7 +613,10 @@ app.post('/api/users/sync', async (req, res) => {
       sendJson(res, 400, { error: 'bad request' });
       return;
     }
-    const user = await userStore.upsertUser({ userId, email, nickname, isNewAccount });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const session = requireUserSession(req, res, { email: normalizedEmail });
+    if (!session) return;
+    const user = await userStore.upsertUser({ userId: session.userId, email: normalizedEmail, nickname, isNewAccount });
     sendJson(res, 200, { ok: true, user });
   } catch (error) {
     console.error('[users/sync]', error);
@@ -672,6 +724,8 @@ app.get('/api/profile-photo', (req, res) => {
 
 app.post('/api/profile-photo', (req, res) => {
   const { userId, email, dataUrl } = req.body ?? {};
+  const normalizedEmail = String(email ?? '').trim().toLowerCase();
+  if (!requireUserSession(req, res, { email: normalizedEmail })) return;
   const result = profilePhotoStore.savePhoto({ userId, email, dataUrl });
   if (!result.ok) {
     const message = result.error === 'too_large'
@@ -744,15 +798,17 @@ app.post('/api/giveaways/join', (req, res) => {
 });
 
 app.post('/api/giveaways/deposit-record', (req, res) => {
-  const { userId, amount, email, nickname, avatarId } = req.body ?? {};
-  const normalizedUserId = String(userId ?? '').trim();
+  const session = requireUserSession(req, res);
+  if (!session) return;
+  const { amount, nickname, avatarId } = req.body ?? {};
+  const normalizedUserId = session.userId;
   const normalizedAmount = Number(amount);
   if (!normalizedUserId || !Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
     sendJson(res, 400, { error: 'invalid_payload' });
     return;
   }
-  const updates = giveawayStore.recordUserDeposit(normalizedUserId, normalizedAmount, {
-    email,
+  const updates = giveawayStore.recordUserDeposit(normalizedUserId, Math.min(normalizedAmount, 50_000), {
+    email: session.email,
     nickname,
     avatarId,
   });
@@ -808,6 +864,8 @@ app.get('/api/case-battles/:battleId', (req, res) => {
 });
 
 app.put('/api/case-battles/:battleId', (req, res) => {
+  const session = requireUserSession(req, res);
+  if (!session) return;
   const battle = req.body?.battle;
   if (!battle?.id || String(battle.id).toLowerCase() !== String(req.params.battleId).toLowerCase()) {
     sendJson(res, 400, { error: 'invalid_battle' });
@@ -822,6 +880,7 @@ app.put('/api/case-battles/:battleId', (req, res) => {
 });
 
 app.delete('/api/case-battles/:battleId', (req, res) => {
+  if (!requireAdminSession(req, res)) return;
   const result = caseBattleStore.remove(req.params.battleId);
   if (result.error) {
     sendJson(res, 404, { error: result.error });
@@ -1212,12 +1271,17 @@ app.get('/api/site-state', async (_req, res) => {
 });
 
 app.post('/api/site-state/feed-event', async (req, res) => {
+  const session = requireUserSession(req, res);
+  if (!session) return;
   const body = req.body;
   if (!isFeedItem(body)) {
     sendJson(res, 400, { error: 'invalid feed item' });
     return;
   }
-  saveState(appendFeedItem(loadState(), body));
+  saveState(appendFeedItem(loadState(), {
+    ...body,
+    username: session.email.split('@')[0],
+  }));
   try {
     sendJson(res, 200, await buildPublicSiteState());
   } catch (error) {
@@ -1243,6 +1307,7 @@ app.post('/api/inventory-grants/ack', (req, res) => {
     sendJson(res, 400, { error: 'invalid ack' });
     return;
   }
+  if (!requireUserSession(req, res, { email })) return;
   const store = loadGrantStore(email);
   const ids = new Set(grantIds);
   store.grants = store.grants.map(g => (ids.has(g.id) ? { ...g, status: 'applied' } : g));
@@ -1293,6 +1358,7 @@ app.post('/api/balance-grants/ack', (req, res) => {
     sendJson(res, 400, { error: 'invalid ack' });
     return;
   }
+  if (!requireUserSession(req, res, { email })) return;
   const store = loadBalanceGrantStore(email);
   const ids = new Set(grantIds);
   store.grants = store.grants.map(g => (ids.has(g.id) ? { ...g, status: 'applied' } : g));
@@ -1656,9 +1722,25 @@ if (!fs.existsSync(DIST)) {
 app.use('/assets', express.static(path.join(DIST, 'assets'), {
   maxAge: '1y',
   immutable: true,
+  index: false,
+  dotfiles: 'deny',
+  setHeaders(res, filePath) {
+    if (String(filePath).endsWith('.map')) {
+      res.statusCode = 404;
+    }
+  },
 }));
 
-app.use(express.static(DIST, { index: false, maxAge: '1h' }));
+app.use(express.static(DIST, {
+  index: false,
+  maxAge: '1h',
+  dotfiles: 'deny',
+  setHeaders(res, filePath) {
+    if (String(filePath).endsWith('.map')) {
+      res.statusCode = 404;
+    }
+  },
+}));
 
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();

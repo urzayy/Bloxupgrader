@@ -27,6 +27,9 @@ const announcementsDir = path.resolve(__dirname, 'announcements');
 
 export default defineConfig({
   appType: 'spa',
+  build: {
+    sourcemap: false,
+  },
   plugins: [
     react(),
     userDbPlugin(userDbDir, siteStateDir),
