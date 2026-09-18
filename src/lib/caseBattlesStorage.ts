@@ -1,5 +1,6 @@
 import type { CaseBattle } from './caseBattles';
 import { isBattleFinished } from './caseBattleRuntime';
+import { mergeBattleLists, preferAdvancedBattle, battleProgressScore, mergeSettledUserIds } from './caseBattleMerge';
 import {
   fetchCaseBattleFromServer,
   fetchLiveBattlesFromServer,
@@ -104,7 +105,7 @@ function mergeBattleIntoCache(battle: CaseBattle): void {
   const index = current.findIndex(entry => entry.id.toLowerCase() === normalized);
   const next = index === -1
     ? [battle, ...current]
-    : current.map((entry, i) => (i === index ? battle : entry));
+    : current.map((entry, i) => (i === index ? preferAdvancedBattle(entry, battle) : entry));
   writeLocalBattles(next);
   notifyBattlesUpdated();
 }
@@ -125,18 +126,28 @@ function loadLocalBattlesOnly(): CaseBattle[] {
 export async function refreshBattlesFromServer(): Promise<CaseBattle[]> {
   const remote = await fetchLiveBattlesFromServer();
   if (remote) {
-    writeLocalBattles(remote);
+    const local = serverBattleCache ?? loadLocalBattlesOnly();
+    // Keep finished/local-advanced battles; listLive() omits finished ones.
+    const merged = mergeBattleLists(local, remote);
+    writeLocalBattles(merged);
     notifyBattlesUpdated();
-    return remote;
+    return merged;
   }
   return serverBattleCache ?? loadLocalBattlesOnly();
 }
 
 export async function hydrateBattleFromServer(battleId: string): Promise<CaseBattle | null> {
   const remote = await fetchCaseBattleFromServer(battleId);
-  if (!remote) return null;
+  if (!remote) {
+    const local = loadLiveBattles().find(
+      entry => entry.id.toLowerCase() === battleId.trim().toLowerCase(),
+    );
+    return local ?? null;
+  }
   mergeBattleIntoCache(remote);
-  return remote;
+  return loadLiveBattles().find(
+    entry => entry.id.toLowerCase() === battleId.trim().toLowerCase(),
+  ) ?? remote;
 }
 
 export function startCaseBattlesServerSync(pollMs = 1500): () => void {
@@ -191,9 +202,20 @@ export function updateLiveBattle(
   if (index === -1) return null;
 
   const nextBattle = updater(battles[index]);
-  mergeBattleIntoCache(nextBattle);
-  void upsertCaseBattleOnServer(nextBattle);
-  return nextBattle;
+  const merged = preferAdvancedBattle(battles[index], nextBattle);
+  // Updater intent wins on equal score except we still preferAdvanced for safety;
+  // if updater advanced the battle, preferAdvanced keeps it.
+  const saved = battleProgressScore(nextBattle) >= battleProgressScore(battles[index])
+    ? {
+        ...nextBattle,
+        settledUserIds: mergeSettledUserIds(battles[index].settledUserIds, nextBattle.settledUserIds),
+        economySettled: Boolean(battles[index].economySettled || nextBattle.economySettled),
+        pendingRound: nextBattle.status === 'finished' ? undefined : nextBattle.pendingRound,
+      }
+    : merged;
+  mergeBattleIntoCache(saved);
+  void upsertCaseBattleOnServer(saved);
+  return saved;
 }
 
 export function removeLiveBattle(battleId: string): boolean {

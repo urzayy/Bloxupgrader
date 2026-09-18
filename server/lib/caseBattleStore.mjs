@@ -19,6 +19,59 @@ function isBattleFinished(battle) {
   );
 }
 
+function dropCount(battle) {
+  return (battle.players ?? []).reduce((sum, player) => sum + (player.drops?.length ?? 0), 0);
+}
+
+function settledCount(battle) {
+  return battle.settledUserIds?.length ?? 0;
+}
+
+function battleProgressScore(battle) {
+  const statusScore =
+    battle.status === 'finished' ? 4
+      : battle.status === 'in_progress' ? 2
+        : 1;
+  return (
+    statusScore * 1_000_000_000
+    + Math.max(0, Number(battle.currentRound) || 0) * 1_000_000
+    + dropCount(battle) * 1_000
+    + settledCount(battle) * 10
+    + Math.floor((Number(battle.finishedAt) || 0) / 1000)
+  );
+}
+
+function mergeSettledUserIds(left, right) {
+  if (!left?.length && !right?.length) return left ?? right;
+  return [...new Set([...(left ?? []), ...(right ?? [])])];
+}
+
+function preferAdvancedBattle(local, incoming) {
+  const localScore = battleProgressScore(local);
+  const incomingScore = battleProgressScore(incoming);
+  const primary = incomingScore > localScore ? incoming : local;
+  const secondary = incomingScore > localScore ? local : incoming;
+  const settledUserIds = mergeSettledUserIds(primary.settledUserIds, secondary.settledUserIds);
+  const economySettled = Boolean(primary.economySettled || secondary.economySettled);
+  let pendingRound = primary.pendingRound;
+  if (primary.status === 'finished') {
+    pendingRound = undefined;
+  } else if (
+    pendingRound
+    && typeof pendingRound.roundIndex === 'number'
+    && pendingRound.roundIndex < primary.currentRound
+  ) {
+    pendingRound = undefined;
+  }
+  return {
+    ...primary,
+    settledUserIds,
+    economySettled,
+    pendingRound,
+    finishedAt: primary.finishedAt ?? secondary.finishedAt,
+  };
+}
+
 function areAllHumansSettled(battle) {
   const humans = (battle.players ?? []).filter(player => !player.isBot).map(player => player.id);
   if (humans.length === 0) return true;
@@ -116,11 +169,15 @@ export function createCaseBattleStore(rootDir) {
     const { battles } = loadAll();
     const normalized = String(battle.id).toLowerCase();
     const index = battles.findIndex(entry => String(entry.id).toLowerCase() === normalized);
+    let nextBattle = battle;
+    if (index !== -1) {
+      nextBattle = preferAdvancedBattle(battles[index], battle);
+    }
     const next = index === -1
-      ? [battle, ...battles]
-      : battles.map((entry, i) => (i === index ? battle : entry));
+      ? [nextBattle, ...battles]
+      : battles.map((entry, i) => (i === index ? nextBattle : entry));
     const saved = saveBattles(next);
-    const stored = saved.find(entry => String(entry.id).toLowerCase() === normalized) ?? battle;
+    const stored = saved.find(entry => String(entry.id).toLowerCase() === normalized) ?? nextBattle;
     return { ok: true, battle: stored };
   }
 

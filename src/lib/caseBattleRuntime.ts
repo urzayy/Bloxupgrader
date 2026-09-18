@@ -30,6 +30,25 @@ export function applyBattleRoundResults(
   battle: CaseBattle,
   dropsByPlayerId: Record<string, Skin>,
 ): CaseBattle {
+  // Idempotent: this round was already applied (stale pendingRound / sync race).
+  const alreadyApplied = battle.players.some(
+    player => (player.drops?.length ?? 0) > battle.currentRound,
+  );
+  if (alreadyApplied) {
+    const nextRound = Math.max(
+      battle.currentRound,
+      Math.max(...battle.players.map(player => player.drops?.length ?? 0), 0),
+    );
+    const finished = nextRound >= battle.caseSlugs.length;
+    return {
+      ...battle,
+      currentRound: Math.min(nextRound, battle.caseSlugs.length),
+      status: finished ? 'finished' : battle.status === 'waiting' ? 'waiting' : 'in_progress',
+      finishedAt: finished ? (battle.finishedAt ?? Date.now()) : battle.finishedAt,
+      pendingRound: undefined,
+    };
+  }
+
   const players = battle.players.map(player => {
     const skin = dropsByPlayerId[player.id];
     if (!skin) return player;
@@ -48,6 +67,7 @@ export function applyBattleRoundResults(
     currentRound: nextRound,
     status: finished ? 'finished' : 'in_progress',
     finishedAt: finished ? (battle.finishedAt ?? Date.now()) : battle.finishedAt,
+    pendingRound: undefined,
   };
 }
 

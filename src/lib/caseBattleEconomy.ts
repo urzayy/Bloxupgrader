@@ -3,6 +3,13 @@ import { resolveBattleOutcomes } from './caseBattleOutcome';
 import { updateLiveBattle } from './caseBattlesStorage';
 import { requestGrantBalance, requestSyncPlayerState } from './uiActions';
 
+/** Session-local lock so sync races cannot grant the pot more than once. */
+const settledLocally = new Set<string>();
+
+function settlementKey(battleId: string, userId: string): string {
+  return `${battleId.toLowerCase()}:${userId}`;
+}
+
 function humanPlayerIds(battle: CaseBattle): string[] {
   return battle.players.filter(player => !player.isBot).map(player => player.id);
 }
@@ -15,6 +22,7 @@ export function areAllHumanPlayersSettled(battle: CaseBattle): boolean {
 }
 
 export function isUserBattleEconomySettled(battle: CaseBattle, userId: string): boolean {
+  if (settledLocally.has(settlementKey(battle.id, userId))) return true;
   return battle.settledUserIds?.includes(userId) ?? false;
 }
 
@@ -63,18 +71,32 @@ export function trySettleBattleEconomy(battle: CaseBattle, userId: string): bool
   if (!isBattleParticipant(battle, userId)) return false;
 
   const freshBattle = pickSettlementBattle(battle);
-  if (isUserBattleEconomySettled(freshBattle, userId)) return false;
+  const key = settlementKey(freshBattle.id, userId);
+  if (settledLocally.has(key) || isUserBattleEconomySettled(freshBattle, userId)) {
+    settledLocally.add(key);
+    return false;
+  }
+
+  // Claim before granting so poll/engine races cannot double-pay.
+  settledLocally.add(key);
 
   const winnings = getBattleRewardBalanceForUser(freshBattle, userId);
 
   if (winnings > 0) {
     const potReady = freshBattle.players.some(player => (player.totalValue ?? 0) > 0);
-    if (!potReady) return false;
+    if (!potReady) {
+      settledLocally.delete(key);
+      return false;
+    }
 
     const granted = requestGrantBalance(winnings);
-    if (!granted) return false;
+    if (!granted) {
+      settledLocally.delete(key);
+      return false;
+    }
     requestSyncPlayerState();
   }
 
-  return markUserBattleSettled(freshBattle.id, userId);
+  markUserBattleSettled(freshBattle.id, userId);
+  return true;
 }

@@ -141,12 +141,21 @@ function tickBattles(): void {
         if (!current.pendingRound || Date.now() < current.pendingRound.applyAt) {
           return current;
         }
+        if (current.status === 'finished') {
+          return { ...current, pendingRound: undefined };
+        }
+        // Stale pending for an already-applied round — drop it.
+        if (current.pendingRound.roundIndex < current.currentRound) {
+          return { ...current, pendingRound: undefined };
+        }
+        if (current.players.some(player => (player.drops?.length ?? 0) > current.currentRound)) {
+          return { ...current, pendingRound: undefined };
+        }
 
-        const applied = applyBattleRoundResults(
+        return applyBattleRoundResults(
           current,
           current.pendingRound.dropsByPlayerId,
         );
-        return { ...applied, pendingRound: undefined };
       });
       continue;
     }

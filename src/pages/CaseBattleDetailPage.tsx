@@ -393,7 +393,7 @@ export function CaseBattleDetailPage({ battleId, balance }: Props) {
     }, 1000);
 
     return () => window.clearInterval(retryId);
-  }, [battle, isOpeningRound, user]);
+  }, [battle?.id, battle?.status, battle?.finishedAt, isOpeningRound, user?.userId]);
 
 
 
