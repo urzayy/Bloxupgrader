@@ -73,6 +73,7 @@ export function MobileHeaderBar({
   onOpenSee,
   onOpenAdminInbox,
   onOpenGiftMoney,
+  onOpenGiftLevel,
   onOpenGift,
   onOpenUserDb,
   onOpenAdmin,
