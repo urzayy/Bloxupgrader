@@ -125,6 +125,15 @@ const resetMarkerStore = createAccountResetMarkerStore(ACCOUNT_RESETS_DIR);
 const banStore = createAccountBanStore(ACCOUNT_BANS_DIR);
 const profilePhotoStore = createProfilePhotoStore(PROFILE_PHOTOS_DIR);
 
+// Re-pin admins every minute so poisoned durable/site-state cannot re-expand the list.
+setInterval(() => {
+  try {
+    adminEmailsStore.enforceLockdown();
+  } catch {
+    /* ignore */
+  }
+}, 60_000).unref?.();
+
 function requireUserSession(req, res, { email } = {}) {
   const token = readSessionTokenFromRequest(req);
   const session = verifySessionToken(token);
@@ -1523,6 +1532,8 @@ app.get('/api/withdraw/tickets/:ticketId', async (req, res) => {
 
 app.post('/api/withdraw/tickets/:ticketId/messages', async (req, res) => {
   try {
+    const session = requireUserSession(req, res);
+    if (!session) return;
     const bundle = await withdrawChatStore.loadBundle(req.params.ticketId);
     if (!bundle) {
       sendJson(res, 404, { error: 'not found' });
@@ -1533,15 +1544,25 @@ app.post('/api/withdraw/tickets/:ticketId/messages', async (req, res) => {
       sendJson(res, 400, { error: 'empty message' });
       return;
     }
+
+    const ticketOwnerId = String(bundle.ticket?.userId ?? '');
+    const isAdminSender = adminEmailsStore.isAdminEmail(session.email);
+    if (!isAdminSender && ticketOwnerId && ticketOwnerId !== session.userId) {
+      sendJson(res, 403, { error: 'forbidden', message: 'Not your ticket.' });
+      return;
+    }
+
     const now = Date.now();
+    const displayName = String(body.senderLabel || session.email.split('@')[0] || 'User').slice(0, 64);
     bundle.messages.push({
       id: `msg_${now}_${Math.random().toString(36).slice(2, 7)}`,
       ticketId: req.params.ticketId,
-      senderId: body.senderId,
-      senderEmail: body.senderEmail,
-      senderRole: body.senderRole,
-      senderLabel: body.senderLabel || (body.senderRole === 'admin' ? 'Admin' : 'User'),
-      text: body.text.trim(),
+      senderId: session.userId,
+      senderEmail: session.email,
+      // Never trust client-provided role — DevTools spoofing.
+      senderRole: isAdminSender ? 'admin' : 'user',
+      senderLabel: isAdminSender ? 'Admin' : displayName,
+      text: String(body.text).trim().slice(0, 4000),
       createdAt: now,
     });
     bundle.ticket.updatedAt = now;
@@ -1555,6 +1576,7 @@ app.post('/api/withdraw/tickets/:ticketId/messages', async (req, res) => {
 
 app.patch('/api/withdraw/tickets/:ticketId', async (req, res) => {
   try {
+    if (!requireAdminSession(req, res)) return;
     const bundle = await withdrawChatStore.loadBundle(req.params.ticketId);
     if (!bundle) {
       sendJson(res, 404, { error: 'not found' });

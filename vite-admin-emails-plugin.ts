@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
 
@@ -43,7 +42,8 @@ export function adminEmailsPlugin(stateDir: string): Plugin {
         try {
           if (req.method === 'GET' && url === '/api/admin/status') {
             const params = new URL(req.url ?? '', 'http://local').searchParams;
-            const email = params.get('email')?.trim() ?? '';
+            const email = params.get('email')?.trim().toLowerCase() ?? '';
+            // Dev: still only return true for pinned admins (no client spoof expands the list).
             sendJson(res, 200, {
               isAdmin: adminEmailsStore.isAdminEmail(email),
               isCreator: adminEmailsStore.isCreatorEmail(email),
@@ -72,7 +72,7 @@ export function adminEmailsPlugin(stateDir: string): Plugin {
               sendJson(res, 200, { ok: true, ...result });
             } catch (error) {
               const message = error instanceof Error ? error.message : 'error';
-              const status = message.includes('creator') ? 403 : 400;
+              const status = message.includes('creator') || message.includes('locked') ? 403 : 400;
               sendJson(res, status, { error: message });
             }
             return;
@@ -88,7 +88,7 @@ export function adminEmailsPlugin(stateDir: string): Plugin {
               sendJson(res, 200, { ok: true, ...result });
             } catch (error) {
               const message = error instanceof Error ? error.message : 'error';
-              const status = message.includes('creator') ? 403 : 400;
+              const status = message.includes('creator') || message.includes('locked') ? 403 : 400;
               sendJson(res, status, { error: message });
             }
             return;

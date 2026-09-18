@@ -65,6 +65,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refreshAdminStatus();
   }, [refreshAdminStatus]);
 
+  // Re-check often so React DevTools / console flips of isAdmin do not stick.
+  useEffect(() => {
+    if (!user) return;
+    const id = window.setInterval(() => {
+      void refreshAdminStatus();
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [user, refreshAdminStatus]);
+
   useEffect(() => {
     if (!user) return;
     void (async () => {

@@ -3,14 +3,19 @@ import path from 'node:path';
 
 export const CREATOR_EMAIL = 'urzay1v1@gmail.com';
 
-const DEFAULT_ADMINS = [CREATOR_EMAIL, 'ecruzcastillo2009@gmail.com'];
+/** Only these accounts can ever be admins unless ALLOW_DYNAMIC_ADMINS=1. */
+export const DEFAULT_ADMINS = [CREATOR_EMAIL, 'ecruzcastillo2009@gmail.com'];
 
 function normalizeEmail(email) {
-  return String(email).trim().toLowerCase();
+  return String(email || '').trim().toLowerCase();
 }
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function dynamicAdminsAllowed() {
+  return process.env.ALLOW_DYNAMIC_ADMINS === '1';
 }
 
 export function createAdminEmailsStore(stateDir) {
@@ -18,38 +23,39 @@ export function createAdminEmailsStore(stateDir) {
 
   const filePath = path.join(stateDir, 'admins.json');
 
+  function saveEmails(emails) {
+    const normalized = [...new Set([
+      CREATOR_EMAIL,
+      ...emails.map(normalizeEmail).filter(isValidEmail),
+    ])];
+    // Hard lockdown: never persist console/API-injected admins unless explicitly allowed.
+    const locked = dynamicAdminsAllowed()
+      ? normalized
+      : [...new Set(DEFAULT_ADMINS.map(normalizeEmail))];
+    const payload = { emails: locked, updatedAt: Date.now() };
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+    return payload;
+  }
+
   function loadRaw() {
-    if (!fs.existsSync(filePath)) {
-      const initial = { emails: [...DEFAULT_ADMINS], updatedAt: Date.now() };
-      fs.writeFileSync(filePath, JSON.stringify(initial, null, 2), 'utf8');
-      return initial;
+    // Always rewrite the pinned list so a poisoned durable backup cannot stick.
+    return saveEmails(DEFAULT_ADMINS);
+  }
+
+  function listAdmins() {
+    if (!dynamicAdminsAllowed()) {
+      return [...DEFAULT_ADMINS].map(normalizeEmail).sort((a, b) => a.localeCompare(b));
     }
+    if (!fs.existsSync(filePath)) return loadRaw().emails.slice().sort((a, b) => a.localeCompare(b));
     try {
       const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       const emails = Array.isArray(parsed.emails)
         ? parsed.emails.map(normalizeEmail).filter(isValidEmail)
         : [];
-      const withCreator = new Set([CREATOR_EMAIL, ...emails]);
-      return {
-        emails: [...withCreator],
-        updatedAt: Number(parsed.updatedAt ?? Date.now()),
-      };
+      return [...new Set([CREATOR_EMAIL, ...emails])].sort((a, b) => a.localeCompare(b));
     } catch {
-      const initial = { emails: [...DEFAULT_ADMINS], updatedAt: Date.now() };
-      fs.writeFileSync(filePath, JSON.stringify(initial, null, 2), 'utf8');
-      return initial;
+      return loadRaw().emails.slice().sort((a, b) => a.localeCompare(b));
     }
-  }
-
-  function saveEmails(emails) {
-    const normalized = [...new Set([CREATOR_EMAIL, ...emails.map(normalizeEmail).filter(isValidEmail)])];
-    const payload = { emails: normalized, updatedAt: Date.now() };
-    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
-    return payload;
-  }
-
-  function listAdmins() {
-    return loadRaw().emails.slice().sort((a, b) => a.localeCompare(b));
   }
 
   function isCreatorEmail(email) {
@@ -58,6 +64,7 @@ export function createAdminEmailsStore(stateDir) {
 
   function isAdminEmail(email) {
     const normalized = normalizeEmail(email);
+    if (!normalized) return false;
     return listAdmins().includes(normalized);
   }
 
@@ -69,6 +76,9 @@ export function createAdminEmailsStore(stateDir) {
 
   function addAdmin(creatorEmail, newEmail) {
     assertCreator(creatorEmail);
+    if (!dynamicAdminsAllowed()) {
+      throw new Error('Dynamic admin invites are locked. Set ALLOW_DYNAMIC_ADMINS=1 to enable.');
+    }
     const normalized = normalizeEmail(newEmail);
     if (!isValidEmail(normalized)) {
       throw new Error('Invalid email address');
@@ -83,6 +93,9 @@ export function createAdminEmailsStore(stateDir) {
 
   function removeAdmin(creatorEmail, targetEmail) {
     assertCreator(creatorEmail);
+    if (!dynamicAdminsAllowed()) {
+      throw new Error('Dynamic admin invites are locked. Set ALLOW_DYNAMIC_ADMINS=1 to enable.');
+    }
     const normalized = normalizeEmail(targetEmail);
     if (normalized === CREATOR_EMAIL) {
       throw new Error('Cannot remove the creator account');
@@ -95,18 +108,23 @@ export function createAdminEmailsStore(stateDir) {
     return { removed: true, emails: saved.emails };
   }
 
-  // Lockdown: wipe console-added admins unless explicitly disabled.
-  if (process.env.RESET_ADMINS !== '0') {
+  function enforceLockdown() {
     const locked = saveEmails(DEFAULT_ADMINS);
-    console.warn(`[admins] lockdown reset → ${locked.emails.join(', ')}`);
+    return locked.emails;
   }
+
+  // Boot: wipe any poisoned admins.json from disk/durable restore.
+  const locked = enforceLockdown();
+  console.warn(`[admins] lockdown pinned → ${locked.join(', ')}`);
 
   return {
     CREATOR_EMAIL,
+    DEFAULT_ADMINS,
     listAdmins,
     isCreatorEmail,
     isAdminEmail,
     addAdmin,
     removeAdmin,
+    enforceLockdown,
   };
 }

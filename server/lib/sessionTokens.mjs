@@ -1,16 +1,35 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 12; // 12h
 
+let warnedWeakSecret = false;
+
+/**
+ * Never fall back to public values (SITE_URL). A guessable secret lets attackers
+ * forge creator sessions and grant themselves admin.
+ */
 function getSecret() {
-  const secret = String(
+  const fromEnv = String(
     process.env.SESSION_TOKEN_SECRET
     || process.env.SUPABASE_SECRET_KEY
     || process.env.SUPABASE_SERVICE_ROLE_KEY
-    || process.env.SITE_URL
-    || 'bloxupgrader-dev-session-secret',
+    || '',
   ).trim();
-  return secret.length >= 16 ? secret : `${secret}:bloxupgrader-session-v1`;
+
+  if (fromEnv.length >= 24) return fromEnv;
+
+  if (!warnedWeakSecret) {
+    warnedWeakSecret = true;
+    console.error(
+      '[security] SESSION_TOKEN_SECRET / SUPABASE_SECRET_KEY missing or too short — using ephemeral secret. Set SESSION_TOKEN_SECRET in Render.',
+    );
+  }
+
+  // Ephemeral per-process secret: forged tokens from SITE_URL no longer work across restarts.
+  if (!globalThis.__bloxSessionSecret) {
+    globalThis.__bloxSessionSecret = randomBytes(32).toString('hex');
+  }
+  return globalThis.__bloxSessionSecret;
 }
 
 function b64url(input) {
