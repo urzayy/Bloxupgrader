@@ -20,6 +20,7 @@ interface Props {
   clearOpen: boolean;
   seeOpen: boolean;
   giftMoneyOpen: boolean;
+  giftLevelOpen: boolean;
   giftOpen: boolean;
   userDbOpen: boolean;
   adminOpen: boolean;
@@ -34,6 +35,7 @@ interface Props {
   onOpenSee: () => void;
   onOpenAdminInbox: () => void;
   onOpenGiftMoney: () => void;
+  onOpenGiftLevel: () => void;
   onOpenGift: () => void;
   onOpenUserDb: () => void;
   onOpenAdmin: () => void;
@@ -56,6 +58,7 @@ export function MobileHeaderBar({
   clearOpen,
   seeOpen,
   giftMoneyOpen,
+  giftLevelOpen,
   giftOpen,
   userDbOpen,
   adminOpen,
@@ -185,6 +188,7 @@ export function MobileHeaderBar({
               Chats
             </AdminBtn>
             <AdminBtn active={giftMoneyOpen} onClick={onOpenGiftMoney} gold>Gift $</AdminBtn>
+            <AdminBtn active={giftLevelOpen} onClick={onOpenGiftLevel} gold>Add Level</AdminBtn>
             <AdminBtn active={giftOpen} onClick={onOpenGift} gold>Gift</AdminBtn>
             <AdminBtn active={userDbOpen} onClick={onOpenUserDb} gold>Users</AdminBtn>
             <AdminBtn active={adminOpen} onClick={onOpenAdmin} win>Admin</AdminBtn>

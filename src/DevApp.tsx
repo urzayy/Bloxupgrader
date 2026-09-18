@@ -45,11 +45,19 @@ import {
   acknowledgeBalanceGrants,
   fetchPendingBalanceGrants,
 } from './lib/balanceGrants';
+import {
+  acknowledgeLevelGrants,
+  fetchPendingLevelGrants,
+} from './lib/levelGrants';
 import { loadAppliedGrantIds, markAppliedGrantIds } from './lib/appliedGrantStorage';
 import {
   loadAppliedBalanceGrantIds,
   markAppliedBalanceGrantIds,
 } from './lib/appliedBalanceGrantStorage';
+import {
+  loadAppliedLevelGrantIds,
+  markAppliedLevelGrantIds,
+} from './lib/appliedLevelGrantStorage';
 import {
   markWithdrawTicketProcessed,
   loadProcessedWithdrawTickets,
@@ -66,7 +74,7 @@ import { ackGiveawayWin, fetchPendingGiveawayWins, type GiveawayPendingWin } fro
 import { dispatchGiveawayUpdated } from './hooks/useGiveawayDetail';
 import { navigateApp } from './lib/appRoute';
 import { XP_PER_WAGERED_COIN } from './lib/playerLevel';
-import { clearXpForUserId, addWagerXp } from './lib/xpStorage';
+import { clearXpForUserId, addWagerXp, setPlayerLevel } from './lib/xpStorage';
 import { clearFreeCaseCooldowns } from './lib/freeCaseCooldown';
 import { registerBattleEntryHandlers, registerGrantBalanceHandler, registerGrantSkinsHandler, registerSellSkinHandler, registerSyncPlayerHandler, registerUpgradeWithSkinHandler } from './lib/uiActions';
 import { bootstrapCaseBattleEngine } from './lib/caseBattleEngine';
@@ -131,6 +139,7 @@ export default function DevApp() {
   const initialWithdrawSyncRef = useRef(true);
   const giftSyncInFlightRef = useRef(false);
   const balanceGiftSyncInFlightRef = useRef(false);
+  const levelGiftSyncInFlightRef = useRef(false);
   const playerStateSyncInFlightRef = useRef(false);
   const playerStateSyncTimerRef = useRef<number | null>(null);
   const lastResetAckRef = useRef<number | null>(null);
@@ -851,6 +860,53 @@ export default function DevApp() {
 
     void syncPendingBalanceGifts();
     const id = setInterval(() => { void syncPendingBalanceGifts(); }, 15000);
+    return () => clearInterval(id);
+  }, [user, documentVisible, log]);
+
+  useEffect(() => {
+    if (!user || !documentVisible) return;
+
+    const syncPendingLevelGifts = async () => {
+      if (levelGiftSyncInFlightRef.current) return;
+      levelGiftSyncInFlightRef.current = true;
+
+      try {
+        const pending = await fetchPendingLevelGrants(user.email);
+        if (!pending.length) return;
+
+        const applied = loadAppliedLevelGrantIds(user.userId);
+        const alreadyApplied = pending.filter(g => applied.has(g.id));
+        const toApply = pending.filter(g => !applied.has(g.id));
+
+        if (alreadyApplied.length) {
+          await acknowledgeLevelGrants(user.email, alreadyApplied.map(g => g.id));
+        }
+
+        if (!toApply.length) return;
+
+        markAppliedLevelGrantIds(user.userId, toApply.map(g => g.id));
+
+        const targetLevel = toApply.reduce(
+          (max, grant) => Math.max(max, Math.floor(Number(grant.level) || 1)),
+          1,
+        );
+        setPlayerLevel(user.userId, targetLevel);
+
+        await acknowledgeLevelGrants(user.email, toApply.map(g => g.id));
+        log('ADMIN.received_level_grant', {
+          level: targetLevel,
+          count: toApply.length,
+        });
+        sfx.win();
+      } catch {
+        /* API offline */
+      } finally {
+        levelGiftSyncInFlightRef.current = false;
+      }
+    };
+
+    void syncPendingLevelGifts();
+    const id = setInterval(() => { void syncPendingLevelGifts(); }, 15000);
     return () => clearInterval(id);
   }, [user, documentVisible, log]);
 

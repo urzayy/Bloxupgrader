@@ -71,6 +71,7 @@ const LOGS_DIR = process.env.USER_LOGS_DIR || path.join(DATA_DIR, 'user-logs');
 const CHATS_DIR = process.env.CHATS_DIR || path.join(DATA_DIR, 'withdraw-chats');
 const GRANTS_DIR = process.env.GRANTS_DIR || path.join(DATA_DIR, 'inventory-grants');
 const BALANCE_GRANTS_DIR = process.env.BALANCE_GRANTS_DIR || path.join(DATA_DIR, 'balance-grants');
+const LEVEL_GRANTS_DIR = process.env.LEVEL_GRANTS_DIR || path.join(DATA_DIR, 'level-grants');
 const STATE_DIR = process.env.STATE_DIR || path.join(DATA_DIR, 'site-state');
 const PROMO_CODES_DIR = process.env.PROMO_CODES_DIR || path.join(DATA_DIR, 'promo-codes');
 const ANNOUNCEMENTS_DIR = process.env.ANNOUNCEMENTS_DIR || path.join(DATA_DIR, 'announcements');
@@ -85,7 +86,7 @@ const BASE_TOTAL_UPGRADES = 13_200;
 const MIN_DEPOSIT_TOTAL = 1000;
 const MIN_WITHDRAW_TOTAL = 20;
 
-for (const dir of [DATA_DIR, LOGS_DIR, USER_DB_DIR, path.join(USER_DB_DIR, 'events'), PLAYER_STATE_DIR, ACCOUNT_RESETS_DIR, ACCOUNT_BANS_DIR, CHATS_DIR, GRANTS_DIR, BALANCE_GRANTS_DIR, STATE_DIR, PROMO_CODES_DIR, ANNOUNCEMENTS_DIR, PROFILE_PHOTOS_DIR, GIVEAWAYS_DIR, CASE_BATTLES_DIR]) {
+for (const dir of [DATA_DIR, LOGS_DIR, USER_DB_DIR, path.join(USER_DB_DIR, 'events'), PLAYER_STATE_DIR, ACCOUNT_RESETS_DIR, ACCOUNT_BANS_DIR, CHATS_DIR, GRANTS_DIR, BALANCE_GRANTS_DIR, LEVEL_GRANTS_DIR, STATE_DIR, PROMO_CODES_DIR, ANNOUNCEMENTS_DIR, PROFILE_PHOTOS_DIR, GIVEAWAYS_DIR, CASE_BATTLES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -94,6 +95,7 @@ const durableDirs = [
   ['account-bans', ACCOUNT_BANS_DIR],
   ['inventory-grants', GRANTS_DIR],
   ['balance-grants', BALANCE_GRANTS_DIR],
+  ['level-grants', LEVEL_GRANTS_DIR],
   ['site-state', STATE_DIR],
   ['promo-codes', PROMO_CODES_DIR],
   ['announcements', ANNOUNCEMENTS_DIR],
@@ -425,6 +427,27 @@ function saveBalanceGrantStore(store) {
   fs.writeFileSync(balanceGrantsPath(store.email), JSON.stringify(store, null, 2), 'utf8');
 }
 
+function levelGrantsPath(email) {
+  return path.join(LEVEL_GRANTS_DIR, `${sanitizeEmail(email)}.json`);
+}
+
+function loadLevelGrantStore(email) {
+  const normalized = email.trim().toLowerCase();
+  const file = levelGrantsPath(normalized);
+  if (!fs.existsSync(file)) return { email: normalized, grants: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!parsed?.grants) return { email: normalized, grants: [] };
+    return parsed;
+  } catch {
+    return { email: normalized, grants: [] };
+  }
+}
+
+function saveLevelGrantStore(store) {
+  fs.writeFileSync(levelGrantsPath(store.email), JSON.stringify(store, null, 2), 'utf8');
+}
+
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
@@ -454,6 +477,7 @@ const BLOCKED_PATH_PREFIXES = [
   '/player-state',
   '/withdraw-chats',
   '/balance-grants',
+  '/level-grants',
   '/inventory-grants',
   '/site-state',
   '/backup',
@@ -1391,6 +1415,63 @@ app.post('/api/balance-grants', (req, res) => {
   };
   store.grants.push(grant);
   saveBalanceGrantStore(store);
+  sendJson(res, 200, { grant });
+});
+
+const MAX_LEVEL_GRANT = 90;
+
+app.get('/api/level-grants', (req, res) => {
+  const email = req.query.email?.trim().toLowerCase();
+  if (!email) {
+    sendJson(res, 400, { error: 'email required' });
+    return;
+  }
+  const store = loadLevelGrantStore(email);
+  sendJson(res, 200, { grants: store.grants.filter(g => g.status === 'pending') });
+});
+
+app.post('/api/level-grants/ack', (req, res) => {
+  const email = req.body?.email?.trim().toLowerCase();
+  const grantIds = req.body?.grantIds;
+  if (!email || !Array.isArray(grantIds)) {
+    sendJson(res, 400, { error: 'invalid ack' });
+    return;
+  }
+  if (!requireUserSession(req, res, { email })) return;
+  const store = loadLevelGrantStore(email);
+  const ids = new Set(grantIds);
+  store.grants = store.grants.map(g => (ids.has(g.id) ? { ...g, status: 'applied' } : g));
+  saveLevelGrantStore(store);
+  sendJson(res, 200, { ok: true });
+});
+
+app.post('/api/level-grants', (req, res) => {
+  const adminSession = requireAdminSession(req, res);
+  if (!adminSession) return;
+  const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
+  const grantedBy = adminSession.email;
+  const level = Math.floor(Number(req.body?.level));
+  if (
+    !targetEmail
+    || !Number.isFinite(level)
+    || level < 1
+    || level > MAX_LEVEL_GRANT
+  ) {
+    sendJson(res, 400, { error: 'invalid grant' });
+    return;
+  }
+  const store = loadLevelGrantStore(targetEmail);
+  const now = Date.now();
+  const grant = {
+    id: `lvl_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    targetEmail,
+    grantedBy,
+    level,
+    createdAt: now,
+    status: 'pending',
+  };
+  store.grants.push(grant);
+  saveLevelGrantStore(store);
   sendJson(res, 200, { grant });
 });
 

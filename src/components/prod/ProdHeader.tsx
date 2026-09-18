@@ -6,6 +6,7 @@ import { NicknameModal } from '../auth/NicknameModal';
 import { AdminSkinPicker } from '../admin/AdminSkinPicker';
 import { AdminGiftPanel } from '../admin/AdminGiftPanel';
 import { AdminGiftMoneyPanel } from '../admin/AdminGiftMoneyPanel';
+import { AdminAddLevelPanel } from '../admin/AdminAddLevelPanel';
 import { AdminWithdrawInbox } from '../admin/AdminWithdrawInbox';
 import { AdminChatNotificationStack } from '../admin/AdminChatNotificationStack';
 import { AdminUserDbPanel } from '../admin/AdminUserDbPanel';
@@ -71,6 +72,7 @@ export function Header({
   const [adminOpen, setAdminOpen] = useState(false);
   const [giftOpen, setGiftOpen] = useState(false);
   const [giftMoneyOpen, setGiftMoneyOpen] = useState(false);
+  const [giftLevelOpen, setGiftLevelOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositMethodOpen, setDepositMethodOpen] = useState(false);
@@ -152,12 +154,54 @@ export function Header({
 
   useEffect(() => {
     if (!isAdmin) return;
+    registerAdminPanelHandler('clear', () => {
+      log('CLICK.open_admin_clear');
+      setClearOpen(true);
+    });
+    registerAdminPanelHandler('see', () => {
+      log('CLICK.open_admin_see');
+      openSeePanel();
+    });
+    registerAdminPanelHandler('inbox', () => {
+      log('CLICK.open_withdraw_inbox');
+      setAdminInboxOpen(true);
+    });
+    registerAdminPanelHandler('giftMoney', () => {
+      log('CLICK.open_admin_gift_money');
+      setGiftMoneyOpen(true);
+    });
+    registerAdminPanelHandler('giftLevel', () => {
+      log('CLICK.open_admin_gift_level');
+      setGiftLevelOpen(true);
+    });
+    registerAdminPanelHandler('gift', () => {
+      log('CLICK.open_admin_gift');
+      setGiftOpen(true);
+    });
+    registerAdminPanelHandler('userDb', () => {
+      log('CLICK.open_user_db');
+      setUserDbOpen(true);
+    });
+    registerAdminPanelHandler('skinPicker', () => {
+      log('CLICK.open_admin');
+      setAdminOpen(true);
+    });
     registerAdminPanelHandler('announcement', () => {
       log('CLICK.open_admin_announcement');
       setAnnouncementOpen(true);
     });
-    return () => registerAdminPanelHandler('announcement', null);
-  }, [isAdmin, log]);
+    return () => {
+      registerAdminPanelHandler('clear', null);
+      registerAdminPanelHandler('see', null);
+      registerAdminPanelHandler('inbox', null);
+      registerAdminPanelHandler('giftMoney', null);
+      registerAdminPanelHandler('giftLevel', null);
+      registerAdminPanelHandler('gift', null);
+      registerAdminPanelHandler('userDb', null);
+      registerAdminPanelHandler('skinPicker', null);
+      registerAdminPanelHandler('announcement', null);
+    };
+  }, [isAdmin, log, openSeePanel]);
 
   return (
     <>
@@ -189,6 +233,19 @@ export function Header({
             log('DEPOSIT.admin_gift_money', {
               target: targetEmail,
               amount,
+            });
+          }}
+        />
+      )}
+      {user && isAdmin && (
+        <AdminAddLevelPanel
+          open={giftLevelOpen}
+          adminEmail={user.email}
+          onClose={() => setGiftLevelOpen(false)}
+          onLevelSent={(targetEmail, level) => {
+            log('ADMIN.gift_level', {
+              target: targetEmail,
+              level,
             });
           }}
         />
@@ -349,6 +406,7 @@ export function Header({
           clearOpen={clearOpen}
           seeOpen={seeOpen}
           giftMoneyOpen={giftMoneyOpen}
+          giftLevelOpen={giftLevelOpen}
           giftOpen={giftOpen}
           userDbOpen={userDbOpen}
           adminOpen={adminOpen}
@@ -383,6 +441,10 @@ export function Header({
           onOpenGiftMoney={() => {
             log('CLICK.open_admin_gift_money');
             setGiftMoneyOpen(true);
+          }}
+          onOpenGiftLevel={() => {
+            log('CLICK.open_admin_gift_level');
+            setGiftLevelOpen(true);
           }}
           onOpenGift={() => {
             log('CLICK.open_admin_gift');
@@ -492,6 +554,21 @@ export function Header({
               }`}
             >
               Gift Money
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                log('CLICK.open_admin_gift_level');
+                setGiftLevelOpen(true);
+              }}
+              title="Set any user's level by email"
+              className={`rounded-lg border px-3 py-2 font-display text-[10px] font-bold uppercase tracking-wider transition ${
+                giftLevelOpen
+                  ? 'border-gold bg-gold/20 text-gold shadow-[0_0_20px_rgba(255,215,0,0.25)]'
+                  : 'border-gold/40 bg-gold/10 text-gold hover:border-gold hover:bg-gold/15'
+              }`}
+            >
+              Add Level
             </button>
             <button
               type="button"

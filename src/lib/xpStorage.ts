@@ -1,6 +1,7 @@
 import {
   applyWagerXp,
   buildPlayerLevelState,
+  MAX_LEVEL,
   type PlayerLevelProgress,
   type PlayerLevelState,
   wageredCoinsToXp,
@@ -116,6 +117,16 @@ export function clearXpForUserId(userId: string): void {
   } catch {
     /* noop */
   }
+}
+
+/** Admin / grant: set absolute level (XP in level resets to 0). */
+export function setPlayerLevel(userId: string, level: number): PlayerLevelState {
+  const clamped = Math.min(MAX_LEVEL, Math.max(1, Math.floor(Number(level) || 1)));
+  const next = { level: clamped, xp: 0 };
+  savePlayerProgress(userId, next);
+  const state = buildPlayerLevelState(next);
+  notifyXpUpdated(userId);
+  return state;
 }
 
 export function notifyXpUpdated(userId: string): void {
