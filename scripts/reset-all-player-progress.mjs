@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import { createUserStore } from '../server/lib/userStore.mjs';
 import { createPlayerStateStore } from '../server/lib/playerStateStore.mjs';
 import { createAccountResetMarkerStore } from '../server/lib/accountResetMarker.mjs';
-import { resetPlayerProgressByEmail } from '../server/lib/accountReset.mjs';
+import { snapshotJsonDir, saveJsonState, durableJsonEnabled } from '../server/lib/durableJsonState.mjs';
 
 dotenv.config();
 
@@ -43,30 +43,30 @@ async function main() {
 
   const registeredEmails = await userStore.listRegisteredEmails();
   const playerStateEmails = emailsFromPlayerStateDir(PLAYER_STATE_DIR);
-  const allEmails = [...new Set([...registeredEmails, ...playerStateEmails].map(normalizeEmail))].sort();
+  const allEmails = [...new Set([...registeredEmails, ...playerStateEmails].map(normalizeEmail))]
+    .filter(Boolean)
+    .sort();
 
-  const skippedAdmins = [];
-  const reset = [];
+  // Zero every balance + inventory (admins included), keep accounts/chats intact.
+  const clearResult = await playerStateStore.clearAllBalances();
 
+  // Force clients to wipe localStorage XP/level on next sync/poll.
+  const resetAt = resetMarkerStore.markGlobalReset();
   for (const email of allEmails) {
-    if (userStore.isAdminEmail(email) || playerStateStore.isAdminEmail(email)) {
-      skippedAdmins.push(email);
-      continue;
-    }
+    resetMarkerStore.markReset(email);
+  }
 
-    const result = await resetPlayerProgressByEmail(email, {
-      playerStateStore,
-      resetMarkerStore,
-    });
-    reset.push(result);
+  if (durableJsonEnabled()) {
+    await saveJsonState('account-resets', snapshotJsonDir(ACCOUNT_RESETS_DIR), { force: true });
+    await saveJsonState('player-state', snapshotJsonDir(PLAYER_STATE_DIR), { force: true });
   }
 
   console.log(JSON.stringify({
     ok: true,
-    resetCount: reset.length,
-    skippedAdminCount: skippedAdmins.length,
-    skippedAdmins,
-    resetEmails: reset.map(entry => entry.email),
+    resetAt,
+    emailMarkers: allEmails.length,
+    balancesCleared: clearResult,
+    note: 'Accounts and chats preserved. Balance/inventory/XP reset to 0; clients clear XP via forceReset.',
   }, null, 2));
 }
 

@@ -214,7 +214,7 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
             }
 
             if (pendingResetAt && Number(body.resetAck) === pendingResetAt) {
-              resetMarkerStore.clearReset(normalizedEmail);
+              resetMarkerStore.clearReset(normalizedEmail, pendingResetAt);
             }
 
             const existing = await playerStateStore.getPlayerStateByEmail(normalizedEmail);

@@ -8,6 +8,7 @@
     "build": "node scripts/generate-feed-catalog.mjs && tsc -b && vite build",
     "generate:cases": "node scripts/generate-case-catalog.mjs",
     "restore:backup": "node scripts/restore-cluster-backup.mjs",
+    "reset:progress": "node scripts/reset-all-player-progress.mjs",
     "start": "node scripts/generate-feed-catalog.mjs && node server.mjs",
     "preview": "vite preview"
   },

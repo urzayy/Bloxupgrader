@@ -5,6 +5,8 @@ import { createServiceSupabase } from './supabaseEnv.mjs';
 const TABLE = 'blox_json_state';
 const FALLBACK_TABLE = 'blox_withdraw_chats';
 const FALLBACK_USER = 'json-state';
+const LOAD_TIMEOUT_MS = 12_000;
+const SAVE_TIMEOUT_MS = 12_000;
 
 export function jsonStateFallbackId(key) {
   return `json-state:${String(key || '').trim()}`;
@@ -35,6 +37,11 @@ function isHollowState(value) {
   return false;
 }
 
+function fileCount(value) {
+  if (!value?.files || typeof value.files !== 'object' || Array.isArray(value.files)) return 0;
+  return Object.keys(value.files).length;
+}
+
 function isSafeRel(name) {
   const rel = String(name || '').replace(/\\/g, '/');
   if (!rel.endsWith('.json')) return false;
@@ -48,7 +55,7 @@ export async function loadJsonState(key) {
   if (!supabase) return null;
   const id = String(key || '').trim();
   if (!id) return null;
-  const signal = AbortSignal.timeout(2000);
+  const signal = AbortSignal.timeout(LOAD_TIMEOUT_MS);
 
   const primary = await supabase.from(TABLE).select('payload').eq('id', id).abortSignal(signal).maybeSingle();
   if (!primary.error && primary.data?.payload != null) return primary.data.payload;
@@ -57,7 +64,7 @@ export async function loadJsonState(key) {
     .from(FALLBACK_TABLE)
     .select('bundle')
     .eq('id', jsonStateFallbackId(id))
-    .abortSignal(AbortSignal.timeout(2000))
+    .abortSignal(AbortSignal.timeout(LOAD_TIMEOUT_MS))
     .maybeSingle();
   if (!fallback.error && fallback.data?.bundle != null) return fallback.data.bundle;
 
@@ -67,18 +74,46 @@ export async function loadJsonState(key) {
   return null;
 }
 
-export async function saveJsonState(key, payload) {
+export async function saveJsonState(key, payload, { force = false } = {}) {
   const supabase = createServiceSupabase();
   if (!supabase) return;
   const id = String(key || '').trim();
   if (!id || payload == null) return;
-  const now = Date.now();
 
+  // Never wipe a populated remote backup with an empty/local-hollow snapshot.
+  if (!force && isHollowState(payload)) {
+    try {
+      const remote = await loadJsonState(id);
+      if (!isHollowState(remote)) {
+        console.warn(`[durable-json] skip hollow overwrite for ${id} (remote has ${fileCount(remote)} files)`);
+        return;
+      }
+    } catch {
+      console.warn(`[durable-json] skip hollow overwrite for ${id} (could not verify remote)`);
+      return;
+    }
+  } else if (!force) {
+    try {
+      const remote = await loadJsonState(id);
+      const localFiles = fileCount(payload);
+      const remoteFiles = fileCount(remote);
+      // Protect against accidental partial local snapshots after deploy.
+      if (!isHollowState(remote) && remoteFiles > 0 && localFiles > 0 && localFiles < Math.max(3, Math.floor(remoteFiles * 0.5))) {
+        console.warn(`[durable-json] skip shrink overwrite for ${id} local=${localFiles} remote=${remoteFiles}`);
+        return;
+      }
+    } catch {
+      /* save anyway if remote check fails */
+    }
+  }
+
+  const now = Date.now();
+  const signal = AbortSignal.timeout(SAVE_TIMEOUT_MS);
   const primary = await supabase.from(TABLE).upsert({
     id,
     payload,
     updated_at: now,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }).abortSignal(signal);
   if (!primary.error) return;
 
   const fallback = await supabase.from(FALLBACK_TABLE).upsert({
@@ -86,7 +121,7 @@ export async function saveJsonState(key, payload) {
     user_id: FALLBACK_USER,
     bundle: payload,
     updated_at: now,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }).abortSignal(AbortSignal.timeout(SAVE_TIMEOUT_MS));
   if (fallback.error) {
     console.error('[durable-json] save', id, primary.error?.message || fallback.error.message);
   }
@@ -124,7 +159,7 @@ export function snapshotJsonDir(dir) {
   return { files };
 }
 
-export function restoreJsonDir(dir, payload) {
+export function restoreJsonDir(dir, payload, { prune = false } = {}) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const files = payload?.files && typeof payload.files === 'object' && !Array.isArray(payload.files)
     ? payload.files
@@ -139,7 +174,10 @@ export function restoreJsonDir(dir, payload) {
     fs.writeFileSync(dest, JSON.stringify(data, null, 2), 'utf8');
   }
 
-  function prune(current, prefix) {
+  // Default: merge only. Pruning after a deploy with a thin remote snapshot wipes chats.
+  if (!prune) return;
+
+  function pruneDir(current, prefix) {
     let names = [];
     try {
       names = fs.readdirSync(current);
@@ -152,7 +190,7 @@ export function restoreJsonDir(dir, payload) {
       try {
         const st = fs.statSync(full);
         if (st.isDirectory()) {
-          if (!prefix) prune(full, name);
+          if (!prefix) pruneDir(full, name);
           continue;
         }
         if (st.isFile() && name.endsWith('.json') && !keep.has(rel.replace(/\\/g, '/'))) {
@@ -164,23 +202,37 @@ export function restoreJsonDir(dir, payload) {
     }
   }
 
-  prune(dir, '');
+  pruneDir(dir, '');
 }
 
 export function attachDurableJson({ key, fileExisted, getState, setState, writeLocal }) {
   const enabled = durableJsonEnabled();
+  let hydrated = !enabled;
+  let hydrateOk = !enabled;
+
   const ready = (async () => {
-    if (!enabled) return;
+    if (!enabled) return true;
     try {
       const remote = await loadJsonState(key);
       if (!isHollowState(remote) && typeof remote === 'object') {
         setState(remote);
         writeLocal(getState());
-        return;
+        hydrateOk = true;
+        hydrated = true;
+        console.log(`[durable-json] restored ${key} (${fileCount(remote)} files)`);
+        return true;
       }
-      if (fileExisted) await saveJsonState(key, getState());
+      if (fileExisted) {
+        await saveJsonState(key, getState());
+        hydrateOk = true;
+      }
+      hydrated = true;
+      return true;
     } catch (error) {
       console.error('[durable-json] hydrate', key, error instanceof Error ? error.message : error);
+      hydrated = true;
+      hydrateOk = false;
+      return false;
     }
   })();
 
@@ -192,12 +244,18 @@ export function attachDurableJson({ key, fileExisted, getState, setState, writeL
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = 0;
-      void ready.then(() => saveJsonState(key, getState()));
-    }, 200);
+      void ready.then(() => {
+        if (!hydrateOk && isHollowState(snapshot)) {
+          console.warn(`[durable-json] skip persist for ${key} until hydrate succeeds`);
+          return;
+        }
+        return saveJsonState(key, getState());
+      });
+    }, 400);
     if (timer && typeof timer.unref === 'function') timer.unref();
   }
 
-  return { persist, ready };
+  return { persist, ready, get hydrated() { return hydrated; } };
 }
 
 function dirHasJson(dir) {
@@ -215,7 +273,7 @@ export function attachDurableDir({ key, dir }) {
     key,
     fileExisted: dirHasJson(dir),
     getState: () => snapshotJsonDir(dir),
-    setState: (next) => restoreJsonDir(dir, next),
-    writeLocal: (payload) => restoreJsonDir(dir, payload),
+    setState: (next) => restoreJsonDir(dir, next, { prune: false }),
+    writeLocal: (payload) => restoreJsonDir(dir, payload, { prune: false }),
   });
 }

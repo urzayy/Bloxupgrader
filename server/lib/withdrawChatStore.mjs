@@ -211,12 +211,7 @@ export function createHybridWithdrawChatStore(fileStore, remoteStore) {
       return bundle;
     },
     async listTickets(filter) {
-      try {
-        return await remoteStore.listTickets(filter);
-      } catch (error) {
-        console.error('[withdraw-chat] remote list failed, using file:', supabaseErrorMessage(error));
-        return fileStore.listTickets(filter);
-      }
+      return mergeTicketLists(remoteStore, fileStore, filter);
     },
     async buildAdminInbox(lastReadByTicket = {}) {
       const tickets = await this.listTickets({ openOnly: true });

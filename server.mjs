@@ -100,11 +100,14 @@ const durableDirs = [
   ['profile-photos', PROFILE_PHOTOS_DIR],
   ['giveaways', GIVEAWAYS_DIR],
   ['case-battles', CASE_BATTLES_DIR],
+  // Extra safety: keep local chat/player mirrors across ephemeral deploys.
+  ['withdraw-chats', CHATS_DIR],
+  ['player-state', PLAYER_STATE_DIR],
 ].map(([key, dir]) => ({ key, dir, handle: attachDurableDir({ key, dir }) }));
 
 await Promise.race([
   Promise.allSettled(durableDirs.map(entry => entry.handle.ready)),
-  new Promise(resolve => setTimeout(resolve, 2000)),
+  new Promise(resolve => setTimeout(resolve, 15_000)),
 ]);
 if (durableJsonEnabled()) {
   console.log('[durable-json] file backup ready (or timed out; server will start anyway)');
@@ -668,7 +671,7 @@ app.post('/api/player-state/sync', async (req, res) => {
     }
 
     if (pendingResetAt && Number(resetAck) === pendingResetAt) {
-      resetMarkerStore.clearReset(normalizedEmail);
+      resetMarkerStore.clearReset(normalizedEmail, pendingResetAt);
     }
 
     let nextBalance = Math.max(0, Math.floor(Number(balance) || 0));

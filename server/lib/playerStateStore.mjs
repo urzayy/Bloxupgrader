@@ -98,6 +98,30 @@ export function createFilePlayerStateStore(rootDir, adminEmailsStore) {
       fs.writeFileSync(filePath(normalizedEmail), JSON.stringify(emptyState, null, 2), 'utf8');
       return emptyState;
     },
+    async clearAllBalances() {
+      const ts = Date.now();
+      let cleared = 0;
+      if (!fs.existsSync(rootDir)) return { cleared, updatedAt: ts };
+      for (const file of fs.readdirSync(rootDir).filter(name => name.endsWith('.json'))) {
+        try {
+          const full = path.join(rootDir, file);
+          const parsed = JSON.parse(fs.readFileSync(full, 'utf8'));
+          const email = normalizeEmail(parsed?.email ?? '');
+          const emptyState = {
+            userId: typeof parsed?.userId === 'string' ? parsed.userId : null,
+            email,
+            balance: 0,
+            inventory: [],
+            updatedAt: ts,
+          };
+          fs.writeFileSync(full, JSON.stringify(emptyState, null, 2), 'utf8');
+          cleared += 1;
+        } catch {
+          /* skip corrupt */
+        }
+      }
+      return { cleared, updatedAt: ts };
+    },
     isAdminEmail(email) {
       return adminEmailsStore.isAdminEmail(email);
     },
@@ -204,6 +228,20 @@ export function createSupabasePlayerStateStore(url, secretKey, adminEmailsStore)
         updatedAt: ts,
       };
     },
+    async clearAllBalances() {
+      const ts = Date.now();
+      // PostgREST requires a filter; match all known rows by updating where balance/inventory exist.
+      const { error, count } = await supabase
+        .from('blox_accounts')
+        .update({
+          balance: 0,
+          inventory: [],
+          inventory_updated_at: ts,
+        }, { count: 'exact' })
+        .gte('created_at', 0);
+      if (error) throw error;
+      return { cleared: count ?? 0, updatedAt: ts };
+    },
     isAdminEmail(email) {
       return adminEmailsStore.isAdminEmail(email);
     },
@@ -243,6 +281,21 @@ export function createHybridPlayerStateStore(fileStore, remoteStore) {
       } catch (error) {
         console.error('[player-state] remote clear failed:', supabaseErrorMessage(error));
       }
+    },
+    async clearAllBalances() {
+      const fileResult = await fileStore.clearAllBalances();
+      let remoteResult = { cleared: 0, updatedAt: fileResult.updatedAt };
+      try {
+        remoteResult = await remoteStore.clearAllBalances();
+      } catch (error) {
+        console.error('[player-state] remote clear-all failed:', supabaseErrorMessage(error));
+      }
+      return {
+        cleared: Math.max(fileResult.cleared, remoteResult.cleared),
+        fileCleared: fileResult.cleared,
+        remoteCleared: remoteResult.cleared,
+        updatedAt: Math.max(fileResult.updatedAt, remoteResult.updatedAt),
+      };
     },
     isAdminEmail(email) {
       return fileStore.isAdminEmail(email);
