@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 import { withdrawChatPlugin } from './vite-withdraw-chat-plugin';
 import { inventoryGrantsPlugin } from './vite-inventory-grants-plugin';
 import { balanceGrantsPlugin } from './vite-balance-grants-plugin';
+import { levelGrantsPlugin } from './vite-level-grants-plugin';
 import { siteStatePlugin } from './vite-site-state-plugin';
 import { userDbPlugin } from './vite-user-db-plugin';
 import { promoCodesPlugin } from './vite-promo-codes-plugin';
@@ -19,6 +20,7 @@ const userDbDir = path.resolve(__dirname, 'user-db');
 const withdrawChatsDir = path.resolve(__dirname, 'withdraw-chats');
 const inventoryGrantsDir = path.resolve(__dirname, 'inventory-grants');
 const balanceGrantsDir = path.resolve(__dirname, 'balance-grants');
+const levelGrantsDir = path.resolve(__dirname, 'level-grants');
 const siteStateDir = path.resolve(__dirname, 'site-state');
 const promoCodesDir = path.resolve(__dirname, 'promo-codes');
 const giveawaysDir = path.resolve(__dirname, 'giveaways');
@@ -40,6 +42,7 @@ export default defineConfig({
     withdrawChatPlugin(withdrawChatsDir, { giveawaysDir, grantsDir: inventoryGrantsDir }),
     inventoryGrantsPlugin(inventoryGrantsDir),
     balanceGrantsPlugin(balanceGrantsDir),
+    levelGrantsPlugin(levelGrantsDir),
     siteStatePlugin(siteStateDir, userDbDir),
     adminEmailsPlugin(siteStateDir),
     presencePlugin(siteStateDir),

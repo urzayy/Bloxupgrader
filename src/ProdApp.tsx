@@ -40,11 +40,19 @@ import {
   acknowledgeBalanceGrants,
   fetchPendingBalanceGrants,
 } from './lib/balanceGrants';
+import {
+  acknowledgeLevelGrants,
+  fetchPendingLevelGrants,
+} from './lib/levelGrants';
 import { loadAppliedGrantIds, markAppliedGrantIds } from './lib/appliedGrantStorage';
 import {
   loadAppliedBalanceGrantIds,
   markAppliedBalanceGrantIds,
 } from './lib/appliedBalanceGrantStorage';
+import {
+  loadAppliedLevelGrantIds,
+  markAppliedLevelGrantIds,
+} from './lib/appliedLevelGrantStorage';
 import {
   markWithdrawTicketProcessed,
   loadProcessedWithdrawTickets,
@@ -59,7 +67,7 @@ import { fetchAccountBanStatus } from './lib/accountBanApi';
 import { DEV_MOBILE_LAYOUT } from './lib/devMobileLayout';
 import { PlayerAnnouncementModal } from './components/announcements/PlayerAnnouncementModal';
 import { usePlayerAnnouncement } from './hooks/usePlayerAnnouncement';
-import { clearXpForUserId } from './lib/xpStorage';
+import { clearXpForUserId, setPlayerLevel } from './lib/xpStorage';
 import { clearFreeCaseCooldowns } from './lib/freeCaseCooldown';
 
 export default function ProdApp() {
@@ -97,6 +105,7 @@ export default function ProdApp() {
   const initialWithdrawSyncRef = useRef(true);
   const giftSyncInFlightRef = useRef(false);
   const balanceGiftSyncInFlightRef = useRef(false);
+  const levelGiftSyncInFlightRef = useRef(false);
   const lastResetAckRef = useRef<number | null>(null);
   const pendingUpgradeRecoveredRef = useRef<string | null>(null);
   inventoryRef.current = inventory;
@@ -572,6 +581,53 @@ export default function ProdApp() {
 
     void syncPendingBalanceGifts();
     const id = setInterval(() => { void syncPendingBalanceGifts(); }, 8000);
+    return () => clearInterval(id);
+  }, [user, log]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const syncPendingLevelGifts = async () => {
+      if (levelGiftSyncInFlightRef.current) return;
+      levelGiftSyncInFlightRef.current = true;
+
+      try {
+        const pending = await fetchPendingLevelGrants(user.email);
+        if (!pending.length) return;
+
+        const applied = loadAppliedLevelGrantIds(user.userId);
+        const alreadyApplied = pending.filter(g => applied.has(g.id));
+        const toApply = pending.filter(g => !applied.has(g.id));
+
+        if (alreadyApplied.length) {
+          await acknowledgeLevelGrants(user.email, alreadyApplied.map(g => g.id));
+        }
+
+        if (!toApply.length) return;
+
+        markAppliedLevelGrantIds(user.userId, toApply.map(g => g.id));
+
+        const targetLevel = toApply.reduce(
+          (max, grant) => Math.max(max, Math.floor(Number(grant.level) || 1)),
+          1,
+        );
+        setPlayerLevel(user.userId, targetLevel);
+
+        await acknowledgeLevelGrants(user.email, toApply.map(g => g.id));
+        log('ADMIN.received_level_grant', {
+          level: targetLevel,
+          count: toApply.length,
+        });
+        sfx.win();
+      } catch {
+        /* API offline */
+      } finally {
+        levelGiftSyncInFlightRef.current = false;
+      }
+    };
+
+    void syncPendingLevelGifts();
+    const id = setInterval(() => { void syncPendingLevelGifts(); }, 8000);
     return () => clearInterval(id);
   }, [user, log]);
 

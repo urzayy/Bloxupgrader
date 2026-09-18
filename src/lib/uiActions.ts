@@ -100,6 +100,7 @@ export type AdminPanelId =
   | 'see'
   | 'inbox'
   | 'giftMoney'
+  | 'giftLevel'
   | 'gift'
   | 'userDb'
   | 'skinPicker'

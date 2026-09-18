@@ -86,6 +86,18 @@ const CORE_ACTIONS: AdminAction[] = [
 
   {
 
+    id: 'giftLevel',
+
+    label: 'Add Level',
+
+    description: 'Set any user\'s level by email',
+
+    tone: 'gold',
+
+  },
+
+  {
+
     id: 'gift',
 
     label: 'Gift User',

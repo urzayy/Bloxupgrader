@@ -11,6 +11,8 @@ inventory-grants/*.json
 !inventory-grants/README.md
 balance-grants/*.json
 !balance-grants/README.md
+level-grants/*.json
+!level-grants/README.md
 site-state/*.json
 !site-state/README.md
 promo-codes/*.json

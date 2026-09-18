@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { AdminSkinPicker } from '../admin/AdminSkinPicker';
 import { AdminGiftPanel } from '../admin/AdminGiftPanel';
 import { AdminGiftMoneyPanel } from '../admin/AdminGiftMoneyPanel';
+import { AdminAddLevelPanel } from '../admin/AdminAddLevelPanel';
 import { AdminWithdrawInbox } from '../admin/AdminWithdrawInbox';
 import { AdminChatNotificationStack } from '../admin/AdminChatNotificationStack';
 import { AdminUserDbPanel } from '../admin/AdminUserDbPanel';
@@ -83,6 +84,7 @@ export function Header({
   const [adminOpen, setAdminOpen] = useState(false);
   const [giftOpen, setGiftOpen] = useState(false);
   const [giftMoneyOpen, setGiftMoneyOpen] = useState(false);
+  const [giftLevelOpen, setGiftLevelOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawPreselectedIds, setWithdrawPreselectedIds] = useState<string[]>([]);
   const [depositOpen, setDepositOpen] = useState(false);
@@ -155,7 +157,7 @@ export function Header({
   }, []);
 
   useEffect(() => {
-    if (!isAdmin || !isCreator) return;
+    if (!isAdmin) return;
     registerAdminPanelHandler('clear', () => {
       log('CLICK.open_admin_clear');
       setClearOpen(true);
@@ -171,6 +173,10 @@ export function Header({
     registerAdminPanelHandler('giftMoney', () => {
       log('CLICK.open_admin_gift_money');
       setGiftMoneyOpen(true);
+    });
+    registerAdminPanelHandler('giftLevel', () => {
+      log('CLICK.open_admin_gift_level');
+      setGiftLevelOpen(true);
     });
     registerAdminPanelHandler('gift', () => {
       log('CLICK.open_admin_gift');
@@ -193,12 +199,13 @@ export function Header({
       registerAdminPanelHandler('see', null);
       registerAdminPanelHandler('inbox', null);
       registerAdminPanelHandler('giftMoney', null);
+      registerAdminPanelHandler('giftLevel', null);
       registerAdminPanelHandler('gift', null);
       registerAdminPanelHandler('userDb', null);
       registerAdminPanelHandler('skinPicker', null);
       registerAdminPanelHandler('announcement', null);
     };
-  }, [isAdmin, isCreator, log, openSeePanel]);
+  }, [isAdmin, log, openSeePanel]);
 
   useEffect(() => {
     if (!isCreator) return;
@@ -254,6 +261,19 @@ export function Header({
             log('DEPOSIT.admin_gift_money', {
               target: targetEmail,
               amount,
+            });
+          }}
+        />
+      )}
+      {user && isAdmin && (
+        <AdminAddLevelPanel
+          open={giftLevelOpen}
+          adminEmail={user.email}
+          onClose={() => setGiftLevelOpen(false)}
+          onLevelSent={(targetEmail, level) => {
+            log('ADMIN.gift_level', {
+              target: targetEmail,
+              level,
             });
           }}
         />
