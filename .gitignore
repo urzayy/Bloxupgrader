@@ -34,3 +34,6 @@ backup/*.copy.txt
 backup/*.sql
 backup/*.json
 backup/*.jsonl
+account-resets/*.json
+account-resets/*.ack.json
+!account-resets/README.md
