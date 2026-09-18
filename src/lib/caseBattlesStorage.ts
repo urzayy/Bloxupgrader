@@ -99,6 +99,17 @@ function writeLocalBattles(battles: CaseBattle[]): void {
   serverBattleCache = pruned;
 }
 
+function replaceBattleInCache(battle: CaseBattle): void {
+  const current = serverBattleCache ?? loadLocalBattlesOnly();
+  const normalized = battle.id.toLowerCase();
+  const index = current.findIndex(entry => entry.id.toLowerCase() === normalized);
+  const next = index === -1
+    ? [battle, ...current]
+    : current.map((entry, i) => (i === index ? battle : entry));
+  writeLocalBattles(next);
+  notifyBattlesUpdated();
+}
+
 function mergeBattleIntoCache(battle: CaseBattle): void {
   const current = serverBattleCache ?? loadLocalBattlesOnly();
   const normalized = battle.id.toLowerCase();
@@ -201,19 +212,20 @@ export function updateLiveBattle(
   );
   if (index === -1) return null;
 
-  const nextBattle = updater(battles[index]);
-  const merged = preferAdvancedBattle(battles[index], nextBattle);
-  // Updater intent wins on equal score except we still preferAdvanced for safety;
-  // if updater advanced the battle, preferAdvanced keeps it.
-  const saved = battleProgressScore(nextBattle) >= battleProgressScore(battles[index])
+  const previous = battles[index];
+  const nextBattle = updater(previous);
+
+  // Local updater always wins for lobby edits (add bot / join). Only block true regressions.
+  const saved = battleProgressScore(nextBattle) >= battleProgressScore(previous)
     ? {
         ...nextBattle,
-        settledUserIds: mergeSettledUserIds(battles[index].settledUserIds, nextBattle.settledUserIds),
-        economySettled: Boolean(battles[index].economySettled || nextBattle.economySettled),
+        settledUserIds: mergeSettledUserIds(previous.settledUserIds, nextBattle.settledUserIds),
+        economySettled: Boolean(previous.economySettled || nextBattle.economySettled),
         pendingRound: nextBattle.status === 'finished' ? undefined : nextBattle.pendingRound,
       }
-    : merged;
-  mergeBattleIntoCache(saved);
+    : preferAdvancedBattle(previous, nextBattle);
+
+  replaceBattleInCache(saved);
   void upsertCaseBattleOnServer(saved);
   return saved;
 }

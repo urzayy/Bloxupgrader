@@ -49,8 +49,25 @@ function mergeSettledUserIds(left, right) {
 function preferAdvancedBattle(local, incoming) {
   const localScore = battleProgressScore(local);
   const incomingScore = battleProgressScore(incoming);
-  const primary = incomingScore > localScore ? incoming : local;
-  const secondary = incomingScore > localScore ? local : incoming;
+  let primary;
+  let secondary;
+  if (incomingScore > localScore) {
+    primary = incoming;
+    secondary = local;
+  } else if (localScore > incomingScore) {
+    primary = local;
+    secondary = incoming;
+  } else {
+    const localPlayers = local.players?.length ?? 0;
+    const incomingPlayers = incoming.players?.length ?? 0;
+    if (incomingPlayers !== localPlayers) {
+      primary = incomingPlayers > localPlayers ? incoming : local;
+      secondary = incomingPlayers > localPlayers ? local : incoming;
+    } else {
+      primary = incoming;
+      secondary = local;
+    }
+  }
   const settledUserIds = mergeSettledUserIds(primary.settledUserIds, secondary.settledUserIds);
   const economySettled = Boolean(primary.economySettled || secondary.economySettled);
   let pendingRound = primary.pendingRound;

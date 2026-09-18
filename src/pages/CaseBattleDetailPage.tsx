@@ -298,23 +298,17 @@ export function CaseBattleDetailPage({ battleId, balance }: Props) {
 
 
   const persistBattle = useCallback(
-
     (updater: (current: CaseBattle) => CaseBattle | null) => {
-
       if (!battle) return;
 
-      const nextBattle = updater(battle);
-
-      if (!nextBattle) return;
-
-      const saved = updateLiveBattle(battle.id, () => nextBattle);
+      const saved = updateLiveBattle(battle.id, current => {
+        const nextBattle = updater(current);
+        return nextBattle ?? current;
+      });
 
       if (!saved) setJoinError('Could not update battle.');
-
     },
-
     [battle],
-
   );
 
 
