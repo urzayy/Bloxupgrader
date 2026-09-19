@@ -1075,7 +1075,7 @@ app.put('/api/case-battles/:battleId', (req, res) => {
     sendJson(res, 400, { error: 'invalid_battle' });
     return;
   }
-  const existing = caseBattleStore.get(req.params.battleId);
+  const existing = caseBattleStore.getById(req.params.battleId);
   const isCreator = String(battle.createdByUserId || '').toLowerCase() === String(session.userId).toLowerCase();
   const isParticipant = Array.isArray(battle.players)
     && battle.players.some(p => !p?.isBot && String(p?.id || '').toLowerCase() === String(session.userId).toLowerCase());
@@ -1105,7 +1105,7 @@ app.put('/api/case-battles/:battleId', (req, res) => {
 app.delete('/api/case-battles/:battleId', (req, res) => {
   const session = requireUserSession(req, res);
   if (!session) return;
-  const existing = caseBattleStore.get(req.params.battleId);
+  const existing = caseBattleStore.getById(req.params.battleId);
   if (!existing) {
     sendJson(res, 404, { error: 'not_found' });
     return;
