@@ -21,6 +21,7 @@ export async function fetchPlayerState(email: string): Promise<PlayerStateSnapsh
   try {
     const res = await fetch(
       `/api/player-state?email=${encodeURIComponent(email.trim().toLowerCase())}`,
+      { headers: sessionAuthHeaders() },
     );
     if (!res.ok) return null;
     const data = await res.json() as { state?: PlayerStateSnapshot | null };
@@ -34,6 +35,7 @@ export async function fetchPendingAccountReset(email: string): Promise<number | 
   try {
     const res = await fetch(
       `/api/player-state/reset-pending?email=${encodeURIComponent(email.trim().toLowerCase())}`,
+      { headers: sessionAuthHeaders() },
     );
     if (!res.ok) return null;
     const data = await res.json() as { resetAt?: number | null };

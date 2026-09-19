@@ -488,6 +488,9 @@ app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   if (req.path.startsWith('/api/')) {
     res.setHeader('Cache-Control', 'no-store');
   }
@@ -854,6 +857,22 @@ app.get('/api/player-state/reset-pending', (req, res) => {
   }
   if (!requireUserSession(req, res, { email })) return;
   sendJson(res, 200, { resetAt: resetMarkerStore.getResetAt(email) });
+});
+
+app.get('/api/player-state', async (req, res) => {
+  const email = req.query.email?.trim().toLowerCase();
+  if (!email) {
+    sendJson(res, 400, { error: 'email required' });
+    return;
+  }
+  if (!requireUserSession(req, res, { email })) return;
+  try {
+    const state = await playerStateStore.getPlayerStateByEmail(email);
+    sendJson(res, 200, { state });
+  } catch (error) {
+    console.error('[player-state]', error);
+    sendJson(res, 500, { error: 'error' });
+  }
 });
 
 app.get('/api/profile-photo', (req, res) => {

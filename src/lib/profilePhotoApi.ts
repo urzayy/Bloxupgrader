@@ -1,3 +1,5 @@
+import { sessionAuthHeaders, withSessionToken } from './sessionToken';
+
 export interface ProfilePhotoRecord {
   userId: string;
   dataUrl: string;
@@ -6,7 +8,9 @@ export interface ProfilePhotoRecord {
 
 export async function fetchProfilePhoto(userId: string): Promise<ProfilePhotoRecord | null> {
   try {
-    const res = await fetch(`/api/profile-photo?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`/api/profile-photo?userId=${encodeURIComponent(userId)}`, {
+      headers: sessionAuthHeaders(),
+    });
     if (!res.ok) return null;
     const data = await res.json() as { photo?: ProfilePhotoRecord | null };
     return data.photo ?? null;
@@ -23,8 +27,8 @@ export async function uploadProfilePhoto(
   try {
     const res = await fetch('/api/profile-photo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, email, dataUrl }),
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(withSessionToken({ userId, email, dataUrl })),
     });
     const data = await res.json().catch(() => ({})) as {
       ok?: boolean;
