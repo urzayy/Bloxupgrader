@@ -32,6 +32,7 @@ import { createWithdrawChatStore } from './server/lib/withdrawChatStore.mjs';
 import { attachDurableDir, durableJsonEnabled } from './server/lib/durableJsonState.mjs';
 import { rateLimit, rateLimitPaths } from './server/lib/rateLimit.mjs';
 import { rejectSelfGrant, requireOperatorAction } from './server/lib/operatorGate.mjs';
+import { maybeRunBootFullReset, runFullProgressReset } from './server/lib/fullReset.mjs';
 
 dotenv.config();
 
@@ -194,6 +195,21 @@ const caseBattleStore = createCaseBattleStore(CASE_BATTLES_DIR);
 const withdrawChatStore = createWithdrawChatStore({ chatsDir: CHATS_DIR });
 console.log(`[withdraw-chat] using ${withdrawChatStore.type} store`);
 console.log(`[data] DATA_DIR=${DATA_DIR}`);
+
+await maybeRunBootFullReset(process.env.FORCE_FULL_RESET_ONCE, DATA_DIR, {
+  playerStateStore,
+  resetMarkerStore,
+  announcementStore,
+  grantsDir: GRANTS_DIR,
+  balanceGrantsDir: BALANCE_GRANTS_DIR,
+  levelGrantsDir: LEVEL_GRANTS_DIR,
+  chatsDir: CHATS_DIR,
+  caseBattlesDir: CASE_BATTLES_DIR,
+  announcementsDir: ANNOUNCEMENTS_DIR,
+  giveawaysDir: GIVEAWAYS_DIR,
+  logsDir: LOGS_DIR,
+  accountResetsDir: ACCOUNT_RESETS_DIR,
+});
 
 if (durableJsonEnabled()) {
   setInterval(() => {
@@ -1354,30 +1370,26 @@ app.post('/api/admin/reset-all-progress', async (req, res) => {
     const __adminSession = await requireAdminSession(req, res);
     if (!__adminSession) return;
 
-    const registeredEmails = await userStore.listRegisteredEmails();
-    const skippedAdmins = [];
-    const reset = [];
-
-    for (const email of registeredEmails) {
-      const normalizedEmail = String(email).trim().toLowerCase();
-      if (!normalizedEmail) continue;
-      if (userStore.isAdminEmail(normalizedEmail) || playerStateStore.isAdminEmail(normalizedEmail)) {
-        skippedAdmins.push(normalizedEmail);
-        continue;
-      }
-
-      const result = await resetPlayerProgressByEmail(normalizedEmail, {
-        playerStateStore,
-        resetMarkerStore,
-      });
-      reset.push(result);
-    }
+    const summary = await runFullProgressReset({
+      playerStateStore,
+      resetMarkerStore,
+      announcementStore,
+      grantsDir: GRANTS_DIR,
+      balanceGrantsDir: BALANCE_GRANTS_DIR,
+      levelGrantsDir: LEVEL_GRANTS_DIR,
+      chatsDir: CHATS_DIR,
+      caseBattlesDir: CASE_BATTLES_DIR,
+      announcementsDir: ANNOUNCEMENTS_DIR,
+      giveawaysDir: GIVEAWAYS_DIR,
+      logsDir: LOGS_DIR,
+      accountResetsDir: ACCOUNT_RESETS_DIR,
+    });
 
     sendJson(res, 200, {
       ok: true,
-      resetCount: reset.length,
-      skippedAdminCount: skippedAdmins.length,
-      skippedAdmins,
+      resetCount: summary?.balances?.cleared ?? 0,
+      globalResetAt: summary?.globalResetAt ?? null,
+      summary,
     });
   } catch (error) {
     console.error('[admin/reset-all-progress]', error);
