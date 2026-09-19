@@ -3,8 +3,8 @@ import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
-import { requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
-import { requireOperatorAction } from './server/lib/operatorGate.mjs';
+import { requireBoundUser, requireCreator, sendJson } from './server/lib/httpAuth.mjs';
+import { rejectSelfGrant, requireCreatorOrOperator } from './server/lib/operatorGate.mjs';
 
 interface BalanceGrant {
   id: string;
@@ -124,7 +124,13 @@ export function balanceGrantsPlugin(grantsDir: string): Plugin {
           }
 
           if (req.method === 'POST' && url === '/api/balance-grants') {
-            if (!requireOperatorAction(req, res, sendJson)) return;
+            const authority = await requireCreatorOrOperator(
+              req,
+              res,
+              sendJson,
+              (r, s) => requireCreator(r, s, userStore, adminEmailsStore),
+            );
+            if (!authority) return;
             const body = JSON.parse(await readBody(req)) as {
               targetEmail: string;
               amount: number;
@@ -135,12 +141,13 @@ export function balanceGrantsPlugin(grantsDir: string): Plugin {
               sendJson(res, 400, { error: 'invalid grant' });
               return;
             }
+            if (rejectSelfGrant(sendJson, res, authority.email, targetEmail)) return;
             const store = loadStore(grantsDir, targetEmail);
             const now = Date.now();
             const grant: BalanceGrant = {
               id: `bal_${now}_${Math.random().toString(36).slice(2, 8)}`,
               targetEmail,
-              grantedBy: 'operator',
+              grantedBy: authority.email,
               amount: Math.min(500_000, Math.max(1, Math.floor(amount))),
               createdAt: now,
               status: 'pending',

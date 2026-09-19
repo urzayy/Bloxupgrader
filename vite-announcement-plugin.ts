@@ -4,8 +4,8 @@ import type { Plugin } from 'vite';
 import { createAnnouncementStore } from './server/lib/announcementStore.mjs';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
-import { requireAdmin, sendJson } from './server/lib/httpAuth.mjs';
-import { requireOperatorAction } from './server/lib/operatorGate.mjs';
+import { requireAdmin, requireCreator, sendJson } from './server/lib/httpAuth.mjs';
+import { requireCreatorOrOperator } from './server/lib/operatorGate.mjs';
 
 function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -48,7 +48,13 @@ export function announcementPlugin(announcementsDir: string, userDbDir: string):
           }
 
           if (url === '/api/admin/announcement' && req.method === 'POST') {
-            if (!requireOperatorAction(req, res, sendJson)) return;
+            const authority = await requireCreatorOrOperator(
+              req,
+              res,
+              sendJson,
+              (r, s) => requireCreator(r, s, userStore, adminEmailsStore),
+            );
+            if (!authority) return;
             const body = await readJsonBody(req) as {
               title?: string;
               message?: string;
@@ -56,7 +62,7 @@ export function announcementPlugin(announcementsDir: string, userDbDir: string):
             const result = announcementStore.publish({
               title: body.title,
               message: body.message,
-              createdBy: 'operator',
+              createdBy: authority.email,
             });
             if (result.error) {
               sendJson(res, 400, { error: result.error });
@@ -67,7 +73,13 @@ export function announcementPlugin(announcementsDir: string, userDbDir: string):
           }
 
           if (url === '/api/admin/announcement/clear' && req.method === 'POST') {
-            if (!requireOperatorAction(req, res, sendJson)) return;
+            const authority = await requireCreatorOrOperator(
+              req,
+              res,
+              sendJson,
+              (r, s) => requireCreator(r, s, userStore, adminEmailsStore),
+            );
+            if (!authority) return;
             await readJsonBody(req);
             sendJson(res, 200, announcementStore.clear());
             return;

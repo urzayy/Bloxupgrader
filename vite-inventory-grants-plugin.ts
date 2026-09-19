@@ -3,8 +3,8 @@ import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
-import { requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
-import { requireOperatorAction } from './server/lib/operatorGate.mjs';
+import { requireBoundUser, requireCreator, sendJson } from './server/lib/httpAuth.mjs';
+import { rejectSelfGrant, requireCreatorOrOperator } from './server/lib/operatorGate.mjs';
 
 interface GrantSkin {
   id: string;
@@ -136,7 +136,13 @@ export function inventoryGrantsPlugin(grantsDir: string): Plugin {
           }
 
           if (req.method === 'POST' && url === '/api/inventory-grants') {
-            if (!requireOperatorAction(req, res, sendJson)) return;
+            const authority = await requireCreatorOrOperator(
+              req,
+              res,
+              sendJson,
+              (r, s) => requireCreator(r, s, userStore, adminEmailsStore),
+            );
+            if (!authority) return;
             const body = JSON.parse(await readBody(req)) as {
               targetEmail: string;
               skin: GrantSkin;
@@ -147,6 +153,7 @@ export function inventoryGrantsPlugin(grantsDir: string): Plugin {
               sendJson(res, 400, { error: 'invalid grant' });
               return;
             }
+            if (rejectSelfGrant(sendJson, res, authority.email, targetEmail)) return;
             const quantity = Math.min(99, Math.max(1, Math.floor(body.quantity ?? 1)));
             const safeSkin: GrantSkin = {
               id: String(body.skin.id).slice(0, 128),
@@ -162,7 +169,7 @@ export function inventoryGrantsPlugin(grantsDir: string): Plugin {
             const grants: InventoryGrant[] = Array.from({ length: quantity }, (_, index) => ({
               id: `grant_${now}_${index}_${Math.random().toString(36).slice(2, 8)}`,
               targetEmail,
-              grantedBy: 'operator',
+              grantedBy: authority.email,
               skin: safeSkin,
               createdAt: now + index,
               status: 'pending' as const,

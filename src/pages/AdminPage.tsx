@@ -74,6 +74,42 @@ const CORE_ACTIONS: AdminAction[] = [
 
   {
 
+    id: 'giftMoney',
+
+    label: 'Gift Money',
+
+    description: 'Gift balance to any user by email',
+
+    tone: 'gold',
+
+  },
+
+  {
+
+    id: 'giftLevel',
+
+    label: 'Add Level',
+
+    description: 'Set any user\'s level by email',
+
+    tone: 'gold',
+
+  },
+
+  {
+
+    id: 'gift',
+
+    label: 'Gift User',
+
+    description: 'Gift skins to any user by email',
+
+    tone: 'gold',
+
+  },
+
+  {
+
     id: 'userDb',
 
     label: 'Users DB',
@@ -84,7 +120,21 @@ const CORE_ACTIONS: AdminAction[] = [
 
   },
 
+  {
+
+    id: 'announcement',
+
+    label: 'Notice',
+
+    description: 'Global popup for all players on entry',
+
+    tone: 'default',
+
+  },
+
 ];
+
+const CREATOR_ONLY_ACTIONS = new Set(['giftMoney', 'giftLevel', 'gift', 'announcement']);
 
 
 
@@ -233,7 +283,7 @@ export function AdminPage() {
 
         <p className="mb-6 max-w-2xl text-sm text-white/45">
 
-          Admin tools. Balance, skin gifts, and announcements are locked — only the site operator can enable them. Giveaways are managed from the Giveaways section.
+          Admin tools. Gift balance, skins, levels, and notices are creator-only. Giveaways are managed from the Giveaways section.
 
         </p>
 
@@ -241,7 +291,10 @@ export function AdminPage() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
 
-          {CORE_ACTIONS.filter(action => action.id !== 'see' || isCreator).map(action => (
+          {CORE_ACTIONS
+            .filter(action => action.id !== 'see' || isCreator)
+            .filter(action => !CREATOR_ONLY_ACTIONS.has(action.id) || isCreator)
+            .map(action => (
 
             <button
 

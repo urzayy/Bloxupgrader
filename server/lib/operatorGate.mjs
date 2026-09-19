@@ -1,10 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
 
 /**
- * Runtime gift / announcement / promo writes are locked by default.
- * They only succeed when OPERATOR_ACTION_SECRET is set and the request
- * sends the same value in X-Operator-Secret (or body.operatorSecret).
- * Admin sessions alone are never enough — blocks self-grants via DevTools.
+ * Gift / announcement / promo writes:
+ * - Creator session (urzay1v1), OR
+ * - OPERATOR_ACTION_SECRET header
+ * Regular admins cannot grant. Self-grants are also rejected.
  */
 
 function readProvidedSecret(req) {
@@ -31,27 +31,34 @@ export function isOperatorActionConfigured() {
   return String(process.env.OPERATOR_ACTION_SECRET || '').trim().length >= 24;
 }
 
+export function hasValidOperatorSecret(req) {
+  const expected = String(process.env.OPERATOR_ACTION_SECRET || '').trim();
+  if (expected.length < 24) return false;
+  const provided = readProvidedSecret(req);
+  return Boolean(provided && secretsEqual(expected, provided));
+}
+
 /**
- * @returns {boolean} true if allowed; otherwise response already sent
+ * @deprecated Prefer requireCreatorOrOperator
  */
 export function requireOperatorAction(req, res, sendJson) {
-  const expected = String(process.env.OPERATOR_ACTION_SECRET || '').trim();
-  if (expected.length < 24) {
-    sendJson(res, 403, {
-      error: 'actions_locked',
-      message: 'Gifts and announcements are locked. Only the site operator can enable them.',
-    });
-    return false;
+  if (hasValidOperatorSecret(req)) return true;
+  sendJson(res, 403, {
+    error: 'actions_locked',
+    message: 'Gifts and announcements are locked. Creator only.',
+  });
+  return false;
+}
+
+/**
+ * Creator session OR operator secret.
+ * @returns {Promise<{ email: string, userId?: string } | null>}
+ */
+export async function requireCreatorOrOperator(req, res, _sendJson, requireCreatorSession) {
+  if (hasValidOperatorSecret(req)) {
+    return { email: 'operator', userId: 'operator' };
   }
-  const provided = readProvidedSecret(req);
-  if (!provided || !secretsEqual(expected, provided)) {
-    sendJson(res, 403, {
-      error: 'actions_locked',
-      message: 'Gifts and announcements are locked.',
-    });
-    return false;
-  }
-  return true;
+  return requireCreatorSession(req, res);
 }
 
 /** Never allow granting to the same email that is performing the action. */
