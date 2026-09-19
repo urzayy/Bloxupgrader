@@ -29,4 +29,4 @@ services:
       - key: ALLOW_DYNAMIC_ADMINS
         value: "0"
       - key: FORCE_FULL_RESET_ONCE
-        value: "2026-09-19-blox"
+        value: "2026-09-19-blox-v2"

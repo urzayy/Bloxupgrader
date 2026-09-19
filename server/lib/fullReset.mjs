@@ -16,6 +16,41 @@ function clearJsonDir(dir) {
   return removed;
 }
 
+function clearPlayerStateDir(dir) {
+  if (!dir || !fs.existsSync(dir)) return 0;
+  let cleared = 0;
+  const ts = Date.now();
+  for (const name of fs.readdirSync(dir).filter(n => n.endsWith('.json'))) {
+    try {
+      const full = path.join(dir, name);
+      let email = '';
+      let userId = null;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(full, 'utf8'));
+        email = String(parsed?.email || '').trim().toLowerCase();
+        userId = typeof parsed?.userId === 'string' ? parsed.userId : null;
+      } catch {
+        /* rewrite anyway */
+      }
+      fs.writeFileSync(
+        full,
+        JSON.stringify({
+          userId,
+          email,
+          balance: 0,
+          inventory: [],
+          updatedAt: ts,
+        }, null, 2),
+        'utf8',
+      );
+      cleared += 1;
+    } catch {
+      /* ignore */
+    }
+  }
+  return cleared;
+}
+
 function writeEmptyBattles(caseBattlesDir) {
   if (!caseBattlesDir) return 0;
   fs.mkdirSync(caseBattlesDir, { recursive: true });
@@ -30,6 +65,7 @@ function writeEmptyBattles(caseBattlesDir) {
  */
 export async function runFullProgressReset({
   playerStateStore,
+  playerStateDir,
   resetMarkerStore,
   announcementStore,
   grantsDir,
@@ -41,6 +77,7 @@ export async function runFullProgressReset({
   giveawaysDir,
   logsDir,
   accountResetsDir,
+  deferRemoteBalanceClear = false,
 }) {
   const summary = {
     at: Date.now(),
@@ -50,11 +87,14 @@ export async function runFullProgressReset({
     errors: [],
   };
 
-  if (playerStateStore?.clearAllBalances) {
+  // Fast local wipe first (never blocks boot).
+  summary.removed.playerStateFiles = clearPlayerStateDir(playerStateDir);
+
+  if (!deferRemoteBalanceClear && playerStateStore?.clearAllBalances) {
     try {
       summary.balances = await Promise.race([
         playerStateStore.clearAllBalances(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('clearAllBalances_timeout')), 20_000)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('clearAllBalances_timeout')), 12_000)),
       ]);
     } catch (error) {
       summary.errors.push(String(error?.message || error));
@@ -90,7 +130,6 @@ export async function runFullProgressReset({
     summary.errors.push(String(error?.message || error));
   }
 
-  // Wipe giveaway runtime state (participants / open slots), keep dir.
   summary.removed.giveaways = clearJsonDir(giveawaysDir);
 
   return summary;
@@ -112,13 +151,21 @@ export async function maybeRunBootFullReset(token, dataDir, deps) {
   }
   console.warn(`[reset] FORCE_FULL_RESET_ONCE=${normalized} — wiping all progress now`);
   try {
-    const summary = await runFullProgressReset(deps);
+    const summary = await runFullProgressReset({
+      ...deps,
+      deferRemoteBalanceClear: true,
+    });
     fs.writeFileSync(marker, JSON.stringify(summary, null, 2), 'utf8');
     console.warn('[reset] wipe complete', summary);
+    // Best-effort remote clear after local wipe (do not fail boot).
+    if (deps.playerStateStore?.clearAllBalances) {
+      void deps.playerStateStore.clearAllBalances()
+        .then((balances) => console.warn('[reset] remote balances cleared', balances))
+        .catch((error) => console.error('[reset] remote balance clear failed', error));
+    }
     return summary;
   } catch (error) {
     console.error('[reset] wipe failed; server will still start', error);
-    // Mark anyway so a broken wipe cannot loop-crash every boot.
     fs.writeFileSync(
       marker,
       JSON.stringify({ at: Date.now(), error: String(error?.message || error) }, null, 2),

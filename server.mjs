@@ -196,25 +196,6 @@ const withdrawChatStore = createWithdrawChatStore({ chatsDir: CHATS_DIR });
 console.log(`[withdraw-chat] using ${withdrawChatStore.type} store`);
 console.log(`[data] DATA_DIR=${DATA_DIR}`);
 
-await maybeRunBootFullReset(
-  process.env.FORCE_FULL_RESET_ONCE || '2026-09-19-blox',
-  DATA_DIR,
-  {
-  playerStateStore,
-  resetMarkerStore,
-  announcementStore,
-  grantsDir: GRANTS_DIR,
-  balanceGrantsDir: BALANCE_GRANTS_DIR,
-  levelGrantsDir: LEVEL_GRANTS_DIR,
-  chatsDir: CHATS_DIR,
-  caseBattlesDir: CASE_BATTLES_DIR,
-  announcementsDir: ANNOUNCEMENTS_DIR,
-  giveawaysDir: GIVEAWAYS_DIR,
-  logsDir: LOGS_DIR,
-  accountResetsDir: ACCOUNT_RESETS_DIR,
-},
-);
-
 if (durableJsonEnabled()) {
   setInterval(() => {
     for (const entry of durableDirs) {
@@ -1376,6 +1357,7 @@ app.post('/api/admin/reset-all-progress', async (req, res) => {
 
     const summary = await runFullProgressReset({
       playerStateStore,
+      playerStateDir: PLAYER_STATE_DIR,
       resetMarkerStore,
       announcementStore,
       grantsDir: GRANTS_DIR,
@@ -2142,4 +2124,24 @@ app.listen(PORT, '0.0.0.0', () => {
   }).catch((error) => {
     console.error('[UserDB] status check failed', error instanceof Error ? error.message : error);
   });
+  // After listen so Render health checks pass while wipe runs.
+  void maybeRunBootFullReset(
+    process.env.FORCE_FULL_RESET_ONCE || '2026-09-19-blox-v2',
+    DATA_DIR,
+    {
+      playerStateStore,
+      playerStateDir: PLAYER_STATE_DIR,
+      resetMarkerStore,
+      announcementStore,
+      grantsDir: GRANTS_DIR,
+      balanceGrantsDir: BALANCE_GRANTS_DIR,
+      levelGrantsDir: LEVEL_GRANTS_DIR,
+      chatsDir: CHATS_DIR,
+      caseBattlesDir: CASE_BATTLES_DIR,
+      announcementsDir: ANNOUNCEMENTS_DIR,
+      giveawaysDir: GIVEAWAYS_DIR,
+      logsDir: LOGS_DIR,
+      accountResetsDir: ACCOUNT_RESETS_DIR,
+    },
+  );
 });
