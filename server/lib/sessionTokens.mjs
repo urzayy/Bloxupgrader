@@ -1,31 +1,36 @@
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 12; // 12h
+/** Bump to invalidate all previously issued (including forged) sessions. */
+const TOKEN_VERSION = 3;
 
 let warnedWeakSecret = false;
 
 /**
- * Never fall back to public values (SITE_URL). A guessable secret lets attackers
- * forge creator sessions and grant themselves admin.
+ * Prefer a dedicated SESSION_TOKEN_SECRET. Never fall back to public SITE_URL.
+ * In production, refuse to use the Supabase service key as HMAC material.
  */
 function getSecret() {
-  const fromEnv = String(
-    process.env.SESSION_TOKEN_SECRET
-    || process.env.SUPABASE_SECRET_KEY
-    || process.env.SUPABASE_SERVICE_ROLE_KEY
-    || '',
-  ).trim();
+  const dedicated = String(process.env.SESSION_TOKEN_SECRET || '').trim();
+  if (dedicated.length >= 32) return dedicated;
 
-  if (fromEnv.length >= 24) return fromEnv;
+  const isProd = process.env.NODE_ENV === 'production';
+  if (!isProd) {
+    const fromEnv = String(
+      process.env.SUPABASE_SECRET_KEY
+      || process.env.SUPABASE_SERVICE_ROLE_KEY
+      || '',
+    ).trim();
+    if (fromEnv.length >= 24) return fromEnv;
+  }
 
   if (!warnedWeakSecret) {
     warnedWeakSecret = true;
     console.error(
-      '[security] SESSION_TOKEN_SECRET / SUPABASE_SECRET_KEY missing or too short — using ephemeral secret. Set SESSION_TOKEN_SECRET in Render.',
+      '[security] SESSION_TOKEN_SECRET missing or too short — using ephemeral secret. Set a long SESSION_TOKEN_SECRET in Render (forces re-login).',
     );
   }
 
-  // Ephemeral per-process secret: forged tokens from SITE_URL no longer work across restarts.
   if (!globalThis.__bloxSessionSecret) {
     globalThis.__bloxSessionSecret = randomBytes(32).toString('hex');
   }
@@ -49,6 +54,7 @@ export function createSessionToken({ userId, email }) {
   const id = String(userId || '').trim();
   if (!normalizedEmail || !id) return null;
   const body = {
+    v: TOKEN_VERSION,
     userId: id,
     email: normalizedEmail,
     exp: Date.now() + TOKEN_TTL_MS,
@@ -72,6 +78,7 @@ export function verifySessionToken(token) {
   try {
     const body = JSON.parse(fromB64url(payloadPart));
     if (!body?.email || !body?.userId || !body?.exp) return null;
+    if (Number(body.v) !== TOKEN_VERSION) return null;
     if (Date.now() > Number(body.exp)) return null;
     return {
       userId: String(body.userId),

@@ -84,6 +84,10 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
               return;
             }
+            if (adminEmailsStore.isAdminEmail(normalizedEmail)) {
+              sendJson(res, 409, { ok: false, error: 'email_exists', message: 'Esta cuenta ya existe. Inicia sesión.' });
+              return;
+            }
             const result = await userStore.registerAccount({ ...body, isNewAccount: true });
             if (result?.conflict) {
               sendJson(res, 409, { ok: false, error: 'email_exists', message: 'Esta cuenta ya existe. Inicia sesión.' });

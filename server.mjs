@@ -19,7 +19,7 @@ import {
 } from './server/lib/sessionTokens.mjs';
 import { clearAccountByEmail as resetAccountByEmail, resetPlayerProgressByEmail } from './server/lib/accountReset.mjs';
 import { createAccountResetMarkerStore } from './server/lib/accountResetMarker.mjs';
-import { clampSyncedBalance } from './server/lib/playerStateSyncGuard.mjs';
+import { clampSyncedBalance, clampSyncedInventory } from './server/lib/playerStateSyncGuard.mjs';
 import { createAccountBanStore } from './server/lib/accountBanStore.mjs';
 import { resolveDepositBonus, resolveRobuxDepositBonus, initPromoCodeStore } from './server/lib/depositBonus.mjs';
 import { createPromoCodeStore } from './server/lib/promoCodeStore.mjs';
@@ -149,8 +149,26 @@ function requireUserSession(req, res, { email } = {}) {
   return session;
 }
 
-function requireAdminSession(req, res) {
-  const session = requireUserSession(req, res);
+async function requireBoundUserSession(req, res, { email } = {}) {
+  const session = requireUserSession(req, res, { email });
+  if (!session) return null;
+  try {
+    const account = await userStore.getAccountByEmail(session.email);
+    const accountId = account?.id || account?.userId;
+    if (!accountId || String(accountId) !== String(session.userId)) {
+      sendJson(res, 403, { error: 'forbidden', message: 'Invalid session. Sign in again.' });
+      return null;
+    }
+  } catch (error) {
+    console.error('[auth] bind session failed', error);
+    sendJson(res, 403, { error: 'forbidden', message: 'Invalid session. Sign in again.' });
+    return null;
+  }
+  return session;
+}
+
+async function requireAdminSession(req, res) {
+  const session = await requireBoundUserSession(req, res);
   if (!session) return null;
   if (!adminEmailsStore.isAdminEmail(session.email)) {
     sendJson(res, 403, { error: 'forbidden', message: 'Admin only.' });
@@ -159,8 +177,8 @@ function requireAdminSession(req, res) {
   return session;
 }
 
-function requireCreatorSession(req, res) {
-  const session = requireUserSession(req, res);
+async function requireCreatorSession(req, res) {
+  const session = await requireBoundUserSession(req, res);
   if (!session) return null;
   if (!adminEmailsStore.isCreatorEmail(session.email)) {
     sendJson(res, 403, { error: 'forbidden', message: 'Creator only.' });
@@ -541,6 +559,15 @@ app.post('/api/auth/register', async (req, res) => {
       sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
       return;
     }
+    // Never mint sessions for pinned admin emails via public register.
+    if (adminEmailsStore.isAdminEmail(normalizedEmail)) {
+      sendJson(res, 409, {
+        ok: false,
+        error: 'email_exists',
+        message: 'Esta cuenta ya existe. Inicia sesión.',
+      });
+      return;
+    }
     const result = await userStore.registerAccount({
       userId,
       email,
@@ -552,11 +579,20 @@ app.post('/api/auth/register', async (req, res) => {
       nickname,
       isNewAccount: true,
     });
+    if (result?.conflict) {
+      sendJson(res, 409, {
+        ok: false,
+        error: 'email_exists',
+        message: 'Esta cuenta ya existe. Inicia sesión.',
+      });
+      return;
+    }
     if (result?.line) appendUserTxtLog(email, result.line);
+    const createdUserId = result?.user?.id || userId;
     sendJson(res, 200, {
       ok: true,
       user: result?.user ?? null,
-      sessionToken: createSessionToken({ userId, email: normalizedEmail }),
+      sessionToken: createSessionToken({ userId: createdUserId, email: normalizedEmail }),
     });
   } catch (error) {
     console.error('[auth/register]', error);
@@ -712,6 +748,13 @@ app.post('/api/player-state/sync', async (req, res) => {
     const pendingGrants = loadBalanceGrantStore(normalizedEmail).grants
       .filter(grant => grant.status === 'pending')
       .reduce((sum, grant) => sum + Math.max(0, Math.floor(Number(grant.amount) || 0)), 0);
+    const pendingInventoryGrantValue = loadGrantStore(normalizedEmail).grants
+      .filter(grant => grant.status === 'pending')
+      .reduce((sum, grant) => {
+        const unit = Math.max(0, Math.floor(Number(grant?.skin?.price) || 0));
+        const qty = Math.max(1, Math.floor(Number(grant?.quantity) || 1));
+        return sum + unit * qty;
+      }, 0);
     const existingBalance = Math.max(0, Math.floor(Number(existing?.balance) || 0));
     const { nextBalance: clamped, blocked } = clampSyncedBalance(
       existingBalance,
@@ -721,6 +764,16 @@ app.post('/api/player-state/sync', async (req, res) => {
     nextBalance = clamped;
     if (blocked) {
       console.warn(`[security] blocked balance inflate email=${normalizedEmail} from=${existingBalance} to=${Math.floor(Number(balance) || 0)}`);
+    }
+
+    const invClamp = clampSyncedInventory(
+      existing?.inventory,
+      nextInventory,
+      pendingInventoryGrantValue,
+    );
+    nextInventory = invClamp.inventory;
+    if (invClamp.blocked) {
+      console.warn(`[security] blocked inventory inflate email=${normalizedEmail}`);
     }
 
     const state = await playerStateStore.savePlayerState({
@@ -832,7 +885,7 @@ app.post('/api/giveaways/join', (req, res) => {
   sendJson(res, 200, result);
 });
 
-app.post('/api/giveaways/deposit-record', (req, res) => {
+app.post('/api/giveaways/deposit-record', async (req, res) => {
   const session = requireUserSession(req, res);
   if (!session) return;
   const { amount, nickname, avatarId } = req.body ?? {};
@@ -850,8 +903,8 @@ app.post('/api/giveaways/deposit-record', (req, res) => {
   sendJson(res, 200, { ok: true, updates });
 });
 
-app.post('/api/admin/giveaways/open', (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+app.post('/api/admin/giveaways/open', async (req, res) => {
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   const adminEmail = __adminSession.email;
   const { period, skin, depositRequirement } = req.body ?? {};
@@ -868,8 +921,8 @@ app.post('/api/admin/giveaways/open', (req, res) => {
   sendJson(res, 200, result);
 });
 
-app.post('/api/admin/giveaways/close', (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+app.post('/api/admin/giveaways/close', async (req, res) => {
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   const adminEmail = __adminSession.email;
   const { period, pickWinner } = req.body ?? {};
@@ -938,7 +991,7 @@ app.delete('/api/case-battles/:battleId', (req, res) => {
   sendJson(res, 200, result);
 });
 
-app.get('/api/account-ban-status', (req, res) => {
+app.get('/api/account-ban-status', async (req, res) => {
   const email = req.query.email?.trim().toLowerCase();
   if (!email) {
     sendJson(res, 400, { error: 'email required' });
@@ -960,9 +1013,9 @@ app.get('/api/account-ban-status', (req, res) => {
   });
 });
 
-app.post('/api/admin/ban-user', (req, res) => {
+app.post('/api/admin/ban-user', async (req, res) => {
   try {
-    const __adminSession = requireAdminSession(req, res);
+    const __adminSession = await requireAdminSession(req, res);
     if (!__adminSession) return;
     const adminEmail = __adminSession.email;
     const { email, days, reason } = req.body ?? {};
@@ -987,9 +1040,9 @@ app.post('/api/admin/ban-user', (req, res) => {
   }
 });
 
-app.post('/api/admin/unban-user', (req, res) => {
+app.post('/api/admin/unban-user', async (req, res) => {
   try {
-    const __adminSession = requireAdminSession(req, res);
+    const __adminSession = await requireAdminSession(req, res);
     if (!__adminSession) return;
     const adminEmail = __adminSession.email;
     const { email } = req.body ?? {};
@@ -1006,32 +1059,45 @@ app.post('/api/admin/unban-user', (req, res) => {
   }
 });
 
-app.get('/api/admin/bans', (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+app.get('/api/admin/bans', async (req, res) => {
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   banStore.purgeExpired();
   sendJson(res, 200, { bans: banStore.listActiveBans() });
 });
 
-app.get('/api/admin/status', (req, res) => {
-  const email = String(req.query.email ?? '').trim().toLowerCase();
+app.get('/api/admin/status', async (req, res) => {
   const session = verifySessionToken(readSessionTokenFromRequest(req));
-  const authed = Boolean(session && session.email === email);
+  if (!session) {
+    sendJson(res, 200, { isAdmin: false, isCreator: false });
+    return;
+  }
+  try {
+    const account = await userStore.getAccountByEmail(session.email);
+    const accountId = account?.id || account?.userId;
+    if (!accountId || String(accountId) !== String(session.userId)) {
+      sendJson(res, 200, { isAdmin: false, isCreator: false });
+      return;
+    }
+  } catch {
+    sendJson(res, 200, { isAdmin: false, isCreator: false });
+    return;
+  }
   sendJson(res, 200, {
-    isAdmin: authed && adminEmailsStore.isAdminEmail(email),
-    isCreator: authed && adminEmailsStore.isCreatorEmail(email),
+    isAdmin: adminEmailsStore.isAdminEmail(session.email),
+    isCreator: adminEmailsStore.isCreatorEmail(session.email),
   });
 });
 
-app.get('/api/admin/emails', (req, res) => {
-  const __creatorSession = requireCreatorSession(req, res);
+app.get('/api/admin/emails', async (req, res) => {
+  const __creatorSession = await requireCreatorSession(req, res);
   if (!__creatorSession) return;
   sendJson(res, 200, { emails: adminEmailsStore.listAdmins() });
 });
 
-app.post('/api/admin/emails/add', (req, res) => {
+app.post('/api/admin/emails/add', async (req, res) => {
   try {
-    const __creatorSession = requireCreatorSession(req, res);
+    const __creatorSession = await requireCreatorSession(req, res);
     if (!__creatorSession) return;
     const creatorEmail = __creatorSession.email;
     const { email } = req.body ?? {};
@@ -1047,9 +1113,9 @@ app.post('/api/admin/emails/add', (req, res) => {
   }
 });
 
-app.post('/api/admin/emails/remove', (req, res) => {
+app.post('/api/admin/emails/remove', async (req, res) => {
   try {
-    const __creatorSession = requireCreatorSession(req, res);
+    const __creatorSession = await requireCreatorSession(req, res);
     if (!__creatorSession) return;
     const creatorEmail = __creatorSession.email;
     const { email } = req.body ?? {};
@@ -1067,7 +1133,7 @@ app.post('/api/admin/emails/remove', (req, res) => {
 
 app.post('/api/admin/reset-password', async (req, res) => {
   try {
-    const __creatorSession = requireCreatorSession(req, res);
+    const __creatorSession = await requireCreatorSession(req, res);
     if (!__creatorSession) return;
     const { email, password } = req.body ?? {};
     const targetEmail = String(email ?? '').trim().toLowerCase();
@@ -1095,7 +1161,7 @@ app.post('/api/admin/reset-password', async (req, res) => {
 
 app.get('/api/admin/player-state', async (req, res) => {
   try {
-    const __adminSession = requireAdminSession(req, res);
+    const __adminSession = await requireAdminSession(req, res);
     if (!__adminSession) return;
     const email = req.query.email?.trim() ?? '';
     if (!email) {
@@ -1119,7 +1185,7 @@ app.get('/api/admin/player-state', async (req, res) => {
 
 app.post('/api/admin/clear-account', async (req, res) => {
   try {
-    const __adminSession = requireAdminSession(req, res);
+    const __adminSession = await requireAdminSession(req, res);
     if (!__adminSession) return;
     const { email } = req.body ?? {};
     if (!email) {
@@ -1147,7 +1213,7 @@ app.post('/api/admin/clear-account', async (req, res) => {
 
 app.post('/api/admin/reset-all-progress', async (req, res) => {
   try {
-    const __adminSession = requireAdminSession(req, res);
+    const __adminSession = await requireAdminSession(req, res);
     if (!__adminSession) return;
 
     const registeredEmails = await userStore.listRegisteredEmails();
@@ -1185,7 +1251,7 @@ app.post('/api/admin/reset-all-progress', async (req, res) => {
 });
 
 app.get('/api/admin/user-db/status', async (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   await refreshStorageStatus();
   const users = await userStore.listUsers();
@@ -1207,13 +1273,13 @@ app.get('/api/admin/user-db/status', async (req, res) => {
 });
 
 app.get('/api/admin/user-db/users', async (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   sendJson(res, 200, { users: await userStore.listUsers() });
 });
 
 app.get('/api/admin/user-db/users/:userId', async (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   const user = await userStore.getUser(req.params.userId);
   if (!user) {
@@ -1224,7 +1290,7 @@ app.get('/api/admin/user-db/users/:userId', async (req, res) => {
 });
 
 app.get('/api/admin/user-db/users/:userId/export.txt', async (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   if (!(await userStore.getUser(req.params.userId))) {
     sendJson(res, 404, { error: 'not found' });
@@ -1234,20 +1300,20 @@ app.get('/api/admin/user-db/users/:userId/export.txt', async (req, res) => {
   res.send(await userStore.exportUserTxt(req.params.userId));
 });
 
-app.get('/api/promo-codes/validate', (req, res) => {
+app.get('/api/promo-codes/validate', async (req, res) => {
   const code = String(req.query.code ?? '');
   sendJson(res, 200, promoCodeStore.validateCode(code));
 });
 
-app.get('/api/admin/promo-codes', (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+app.get('/api/admin/promo-codes', async (req, res) => {
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   sendJson(res, 200, { codes: promoCodeStore.listCodes() });
 });
 
-app.post('/api/admin/promo-codes', (req, res) => {
+app.post('/api/admin/promo-codes', async (req, res) => {
   const body = req.body ?? {};
-  const __adminSession = requireAdminSession(req, res);
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   body.adminEmail = __adminSession.email;
   const result = promoCodeStore.createCode({
@@ -1264,8 +1330,8 @@ app.post('/api/admin/promo-codes', (req, res) => {
   sendJson(res, 200, { entry: result.entry });
 });
 
-app.delete('/api/admin/promo-codes/:code', (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+app.delete('/api/admin/promo-codes/:code', async (req, res) => {
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   const result = promoCodeStore.deleteCode(req.params.code ?? '');
   if (result.error) {
@@ -1279,15 +1345,15 @@ app.get('/api/announcement/active', (_req, res) => {
   sendJson(res, 200, { announcement: announcementStore.getActive() });
 });
 
-app.get('/api/admin/announcement', (req, res) => {
-  const __adminSession = requireAdminSession(req, res);
+app.get('/api/admin/announcement', async (req, res) => {
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   sendJson(res, 200, { announcement: announcementStore.getActive() });
 });
 
-app.post('/api/admin/announcement', (req, res) => {
+app.post('/api/admin/announcement', async (req, res) => {
   const body = req.body ?? {};
-  const __adminSession = requireAdminSession(req, res);
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   body.adminEmail = __adminSession.email;
   const result = announcementStore.publish({
@@ -1302,9 +1368,9 @@ app.post('/api/admin/announcement', (req, res) => {
   sendJson(res, 200, result);
 });
 
-app.post('/api/admin/announcement/clear', (req, res) => {
+app.post('/api/admin/announcement/clear', async (req, res) => {
   const body = req.body ?? {};
-  const __adminSession = requireAdminSession(req, res);
+  const __adminSession = await requireAdminSession(req, res);
   if (!__adminSession) return;
   body.adminEmail = __adminSession.email;
   sendJson(res, 200, announcementStore.clear());
@@ -1349,7 +1415,7 @@ app.get('/api/inventory-grants', (req, res) => {
   sendJson(res, 200, { grants: store.grants.filter(g => g.status === 'pending') });
 });
 
-app.post('/api/inventory-grants/ack', (req, res) => {
+app.post('/api/inventory-grants/ack', async (req, res) => {
   const email = req.body?.email?.trim().toLowerCase();
   const grantIds = req.body?.grantIds;
   if (!email || !Array.isArray(grantIds)) {
@@ -1364,8 +1430,8 @@ app.post('/api/inventory-grants/ack', (req, res) => {
   sendJson(res, 200, { ok: true });
 });
 
-app.post('/api/inventory-grants', (req, res) => {
-  const adminSession = requireAdminSession(req, res);
+app.post('/api/inventory-grants', async (req, res) => {
+  const adminSession = await requireAdminSession(req, res);
   if (!adminSession) return;
   const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
   const grantedBy = adminSession.email;
@@ -1400,7 +1466,7 @@ app.get('/api/balance-grants', (req, res) => {
   sendJson(res, 200, { grants: store.grants.filter(g => g.status === 'pending') });
 });
 
-app.post('/api/balance-grants/ack', (req, res) => {
+app.post('/api/balance-grants/ack', async (req, res) => {
   const email = req.body?.email?.trim().toLowerCase();
   const grantIds = req.body?.grantIds;
   if (!email || !Array.isArray(grantIds)) {
@@ -1415,8 +1481,8 @@ app.post('/api/balance-grants/ack', (req, res) => {
   sendJson(res, 200, { ok: true });
 });
 
-app.post('/api/balance-grants', (req, res) => {
-  const adminSession = requireAdminSession(req, res);
+app.post('/api/balance-grants', async (req, res) => {
+  const adminSession = await requireAdminSession(req, res);
   if (!adminSession) return;
   const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
   const grantedBy = adminSession.email;
@@ -1452,7 +1518,7 @@ app.get('/api/level-grants', (req, res) => {
   sendJson(res, 200, { grants: store.grants.filter(g => g.status === 'pending') });
 });
 
-app.post('/api/level-grants/ack', (req, res) => {
+app.post('/api/level-grants/ack', async (req, res) => {
   const email = req.body?.email?.trim().toLowerCase();
   const grantIds = req.body?.grantIds;
   if (!email || !Array.isArray(grantIds)) {
@@ -1467,8 +1533,8 @@ app.post('/api/level-grants/ack', (req, res) => {
   sendJson(res, 200, { ok: true });
 });
 
-app.post('/api/level-grants', (req, res) => {
-  const adminSession = requireAdminSession(req, res);
+app.post('/api/level-grants', async (req, res) => {
+  const adminSession = await requireAdminSession(req, res);
   if (!adminSession) return;
   const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
   const grantedBy = adminSession.email;
@@ -1504,7 +1570,7 @@ app.get('/api/withdraw/tickets', async (req, res) => {
   try {
     let tickets;
     if (adminRequested) {
-      const adminSession = requireAdminSession(req, res);
+      const adminSession = await requireAdminSession(req, res);
       if (!adminSession) return;
       tickets = await withdrawChatStore.listTickets(all ? undefined : { openOnly: true });
     } else {
@@ -1518,7 +1584,7 @@ app.get('/api/withdraw/tickets', async (req, res) => {
 });
 
 app.post('/api/withdraw/admin-inbox', async (req, res) => {
-  if (!requireAdminSession(req, res)) return;
+  if (!(await requireAdminSession(req, res))) return;
   const lastReadByTicket = req.body?.lastReadByTicket ?? {};
   try {
     const items = await withdrawChatStore.buildAdminInbox(lastReadByTicket);
@@ -1589,7 +1655,7 @@ app.post('/api/withdraw/tickets/:ticketId/messages', async (req, res) => {
 
 app.patch('/api/withdraw/tickets/:ticketId', async (req, res) => {
   try {
-    if (!requireAdminSession(req, res)) return;
+    if (!(await requireAdminSession(req, res))) return;
     const bundle = await withdrawChatStore.loadBundle(req.params.ticketId);
     if (!bundle) {
       sendJson(res, 404, { error: 'not found' });

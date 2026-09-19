@@ -33,7 +33,10 @@ export function shouldSkipEmptyPlayerStateOverwrite(existing, balance, inventory
 
 /** Hard caps so DevTools / forged sync cannot invent coins. */
 export const MAX_BALANCE_HARD_CAP = 2_000_000;
-export const MAX_BALANCE_SYNC_INCREASE = 250_000;
+/** Per sync jump allowed without a pending admin grant (game wins stay modest). */
+export const MAX_BALANCE_SYNC_INCREASE = 25_000;
+/** Inventory total-value jump allowed without pending inventory grants. */
+export const MAX_INVENTORY_VALUE_SYNC_INCREASE = 50_000;
 
 /**
  * Clamp a client-reported balance so it cannot jump far above the last
@@ -52,4 +55,24 @@ export function clampSyncedBalance(existingBalance, requestedBalance, pendingGra
   }
   if (nextBalance > MAX_BALANCE_HARD_CAP) nextBalance = MAX_BALANCE_HARD_CAP;
   return { nextBalance, maxAllowed, blocked: normalizeBalance(requestedBalance) > maxAllowed };
+}
+
+export function inventoryTotalValue(items) {
+  return normalizeInventory(items).reduce((sum, skin) => sum + Math.max(0, Math.floor(Number(skin.price) || 0)), 0);
+}
+
+/**
+ * Reject invented inventories that inflate total value beyond a small win window.
+ */
+export function clampSyncedInventory(existingInventory, requestedInventory, pendingGrantValue = 0) {
+  const existing = normalizeInventory(existingInventory);
+  const incoming = normalizeInventory(requestedInventory);
+  const existingValue = inventoryTotalValue(existing);
+  const incomingValue = inventoryTotalValue(incoming);
+  const grants = Math.max(0, Math.floor(Number(pendingGrantValue) || 0));
+  const maxAllowed = existingValue + grants + MAX_INVENTORY_VALUE_SYNC_INCREASE;
+  if (incomingValue > maxAllowed) {
+    return { inventory: existing, blocked: true, maxAllowed };
+  }
+  return { inventory: incoming, blocked: false, maxAllowed };
 }
