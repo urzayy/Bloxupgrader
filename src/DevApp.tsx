@@ -585,12 +585,9 @@ export default function DevApp() {
     return true;
   }, [user, log]);
 
-  const handleAdminGrantSkin = useCallback((skin: Skin) => {
-    if (!isAdmin(user)) return;
-    log('DEPOSIT.admin', { skin: skin.name, price: formatUSD(skin.price), weapon: skin.weapon });
-    setInventory(prev => grantSkinToInventory(prev, skin));
-    sfx.win();
-  }, [user, log]);
+  const handleAdminGrantSkin = useCallback((_skin: Skin) => {
+    // Self-grants via Admin Skin Picker are permanently disabled.
+  }, []);
 
   const handleWithdrawRequest = useCallback(async (skins: Skin[]): Promise<WithdrawTicketBundle | null> => {
     if (!user || !skins.length) return null;

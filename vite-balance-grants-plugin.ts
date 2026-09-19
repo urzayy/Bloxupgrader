@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
-import { requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
+import { requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
+import { requireOperatorAction } from './server/lib/operatorGate.mjs';
 
 interface BalanceGrant {
   id: string;
@@ -123,8 +124,7 @@ export function balanceGrantsPlugin(grantsDir: string): Plugin {
           }
 
           if (req.method === 'POST' && url === '/api/balance-grants') {
-            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
-            if (!session) return;
+            if (!requireOperatorAction(req, res, sendJson)) return;
             const body = JSON.parse(await readBody(req)) as {
               targetEmail: string;
               amount: number;
@@ -140,7 +140,7 @@ export function balanceGrantsPlugin(grantsDir: string): Plugin {
             const grant: BalanceGrant = {
               id: `bal_${now}_${Math.random().toString(36).slice(2, 8)}`,
               targetEmail,
-              grantedBy: session.email,
+              grantedBy: 'operator',
               amount: Math.min(500_000, Math.max(1, Math.floor(amount))),
               createdAt: now,
               status: 'pending',

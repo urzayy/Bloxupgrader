@@ -74,42 +74,6 @@ const CORE_ACTIONS: AdminAction[] = [
 
   {
 
-    id: 'giftMoney',
-
-    label: 'Gift Money',
-
-    description: 'Gift balance to any user by email',
-
-    tone: 'gold',
-
-  },
-
-  {
-
-    id: 'giftLevel',
-
-    label: 'Add Level',
-
-    description: 'Set any user\'s level by email',
-
-    tone: 'gold',
-
-  },
-
-  {
-
-    id: 'gift',
-
-    label: 'Gift User',
-
-    description: 'Gift skins to any user by email',
-
-    tone: 'gold',
-
-  },
-
-  {
-
     id: 'userDb',
 
     label: 'Users DB',
@@ -117,30 +81,6 @@ const CORE_ACTIONS: AdminAction[] = [
     description: 'User database and activity',
 
     tone: 'gold',
-
-  },
-
-  {
-
-    id: 'skinPicker',
-
-    label: 'Admin',
-
-    description: 'Add skins to your inventory',
-
-    tone: 'win',
-
-  },
-
-  {
-
-    id: 'announcement',
-
-    label: 'Notice',
-
-    description: 'Global popup for all players on entry',
-
-    tone: 'default',
 
   },
 
@@ -293,7 +233,7 @@ export function AdminPage() {
 
         <p className="mb-6 max-w-2xl text-sm text-white/45">
 
-          Admin tools. Giveaways are managed from the Giveaways section.
+          Admin tools. Balance, skin gifts, and announcements are locked — only the site operator can enable them. Giveaways are managed from the Giveaways section.
 
         </p>
 

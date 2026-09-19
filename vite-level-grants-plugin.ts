@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
-import { requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
+import { requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
+import { requireOperatorAction } from './server/lib/operatorGate.mjs';
 
 const MAX_LEVEL = 90;
 
@@ -125,8 +126,7 @@ export function levelGrantsPlugin(grantsDir: string): Plugin {
           }
 
           if (req.method === 'POST' && url === '/api/level-grants') {
-            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
-            if (!session) return;
+            if (!requireOperatorAction(req, res, sendJson)) return;
             const body = JSON.parse(await readBody(req)) as {
               targetEmail: string;
               level: number;
@@ -147,7 +147,7 @@ export function levelGrantsPlugin(grantsDir: string): Plugin {
             const grant: LevelGrant = {
               id: `lvl_${now}_${Math.random().toString(36).slice(2, 8)}`,
               targetEmail,
-              grantedBy: session.email,
+              grantedBy: 'operator',
               level,
               createdAt: now,
               status: 'pending',

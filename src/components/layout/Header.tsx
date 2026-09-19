@@ -207,28 +207,23 @@ export function Header({
       setAdminInboxOpen(true);
     });
     registerAdminPanelHandler('giftMoney', () => {
-      log('CLICK.open_admin_gift_money');
-      setGiftMoneyOpen(true);
+      log('CLICK.admin_gift_locked');
     });
     registerAdminPanelHandler('giftLevel', () => {
-      log('CLICK.open_admin_gift_level');
-      setGiftLevelOpen(true);
+      log('CLICK.admin_gift_locked');
     });
     registerAdminPanelHandler('gift', () => {
-      log('CLICK.open_admin_gift');
-      setGiftOpen(true);
+      log('CLICK.admin_gift_locked');
     });
     registerAdminPanelHandler('userDb', () => {
       log('CLICK.open_user_db');
       setUserDbOpen(true);
     });
     registerAdminPanelHandler('skinPicker', () => {
-      log('CLICK.open_admin');
-      setAdminOpen(true);
+      log('CLICK.admin_gift_locked');
     });
     registerAdminPanelHandler('announcement', () => {
-      log('CLICK.open_admin_announcement');
-      setAnnouncementOpen(true);
+      log('CLICK.admin_gift_locked');
     });
     return () => {
       registerAdminPanelHandler('clear', null);

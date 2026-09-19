@@ -6,6 +6,7 @@ import { initPromoCodeStore } from './server/lib/depositBonus.mjs';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
 import { requireAdmin, sendJson } from './server/lib/httpAuth.mjs';
+import { requireOperatorAction } from './server/lib/operatorGate.mjs';
 
 function readBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -49,8 +50,7 @@ export function promoCodesPlugin(promoCodesDir: string, userDbDir: string): Plug
           }
 
           if (req.method === 'POST' && url === '/api/admin/promo-codes') {
-            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
-            if (!session) return;
+            if (!requireOperatorAction(req, res, sendJson)) return;
             const body = JSON.parse(await readBody(req)) as {
               code?: string;
               percent?: number;
@@ -62,7 +62,7 @@ export function promoCodesPlugin(promoCodesDir: string, userDbDir: string): Plug
               percent: Number(body.percent),
               durationValue: body.durationValue,
               durationUnit: body.durationUnit ?? 'permanent',
-              createdBy: session.email,
+              createdBy: 'operator',
             });
             if (result.error) {
               sendJson(res, 400, { error: result.error });
@@ -74,8 +74,7 @@ export function promoCodesPlugin(promoCodesDir: string, userDbDir: string): Plug
 
           const deleteMatch = url.match(/^\/api\/admin\/promo-codes\/([^/?]+)/);
           if (req.method === 'DELETE' && deleteMatch) {
-            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
-            if (!session) return;
+            if (!requireOperatorAction(req, res, sendJson)) return;
             const code = decodeURIComponent(deleteMatch[1] ?? '');
             const result = promoCodeStore.deleteCode(code);
             if (result.error) {

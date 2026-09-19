@@ -5,6 +5,7 @@ import { createAnnouncementStore } from './server/lib/announcementStore.mjs';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
 import { requireAdmin, sendJson } from './server/lib/httpAuth.mjs';
+import { requireOperatorAction } from './server/lib/operatorGate.mjs';
 
 function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -47,8 +48,7 @@ export function announcementPlugin(announcementsDir: string, userDbDir: string):
           }
 
           if (url === '/api/admin/announcement' && req.method === 'POST') {
-            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
-            if (!session) return;
+            if (!requireOperatorAction(req, res, sendJson)) return;
             const body = await readJsonBody(req) as {
               title?: string;
               message?: string;
@@ -56,7 +56,7 @@ export function announcementPlugin(announcementsDir: string, userDbDir: string):
             const result = announcementStore.publish({
               title: body.title,
               message: body.message,
-              createdBy: session.email,
+              createdBy: 'operator',
             });
             if (result.error) {
               sendJson(res, 400, { error: result.error });
@@ -67,8 +67,7 @@ export function announcementPlugin(announcementsDir: string, userDbDir: string):
           }
 
           if (url === '/api/admin/announcement/clear' && req.method === 'POST') {
-            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
-            if (!session) return;
+            if (!requireOperatorAction(req, res, sendJson)) return;
             await readJsonBody(req);
             sendJson(res, 200, announcementStore.clear());
             return;

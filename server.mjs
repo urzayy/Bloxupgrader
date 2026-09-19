@@ -31,6 +31,7 @@ import { createCaseBattleStore } from './server/lib/caseBattleStore.mjs';
 import { createWithdrawChatStore } from './server/lib/withdrawChatStore.mjs';
 import { attachDurableDir, durableJsonEnabled } from './server/lib/durableJsonState.mjs';
 import { rateLimit, rateLimitPaths } from './server/lib/rateLimit.mjs';
+import { rejectSelfGrant, requireOperatorAction } from './server/lib/operatorGate.mjs';
 
 dotenv.config();
 
@@ -1449,16 +1450,14 @@ app.get('/api/admin/promo-codes', async (req, res) => {
 });
 
 app.post('/api/admin/promo-codes', async (req, res) => {
+  if (!requireOperatorAction(req, res, sendJson)) return;
   const body = req.body ?? {};
-  const __adminSession = await requireAdminSession(req, res);
-  if (!__adminSession) return;
-  body.adminEmail = __adminSession.email;
   const result = promoCodeStore.createCode({
     code: String(body.code ?? ''),
     percent: Number(body.percent),
     durationValue: body.durationValue,
     durationUnit: body.durationUnit ?? 'permanent',
-    createdBy: String(body.adminEmail ?? '').trim(),
+    createdBy: 'operator',
   });
   if (result.error) {
     sendJson(res, 400, { error: result.error });
@@ -1468,8 +1467,7 @@ app.post('/api/admin/promo-codes', async (req, res) => {
 });
 
 app.delete('/api/admin/promo-codes/:code', async (req, res) => {
-  const __adminSession = await requireAdminSession(req, res);
-  if (!__adminSession) return;
+  if (!requireOperatorAction(req, res, sendJson)) return;
   const result = promoCodeStore.deleteCode(req.params.code ?? '');
   if (result.error) {
     sendJson(res, 400, { error: result.error });
@@ -1489,14 +1487,12 @@ app.get('/api/admin/announcement', async (req, res) => {
 });
 
 app.post('/api/admin/announcement', async (req, res) => {
+  if (!requireOperatorAction(req, res, sendJson)) return;
   const body = req.body ?? {};
-  const __adminSession = await requireAdminSession(req, res);
-  if (!__adminSession) return;
-  body.adminEmail = __adminSession.email;
   const result = announcementStore.publish({
     title: body.title,
     message: body.message,
-    createdBy: body.adminEmail,
+    createdBy: 'operator',
   });
   if (result.error) {
     sendJson(res, 400, { error: result.error });
@@ -1506,10 +1502,7 @@ app.post('/api/admin/announcement', async (req, res) => {
 });
 
 app.post('/api/admin/announcement/clear', async (req, res) => {
-  const body = req.body ?? {};
-  const __adminSession = await requireAdminSession(req, res);
-  if (!__adminSession) return;
-  body.adminEmail = __adminSession.email;
+  if (!requireOperatorAction(req, res, sendJson)) return;
   sendJson(res, 200, announcementStore.clear());
 });
 
@@ -1570,15 +1563,15 @@ app.post('/api/inventory-grants/ack', async (req, res) => {
 });
 
 app.post('/api/inventory-grants', async (req, res) => {
-  const adminSession = await requireAdminSession(req, res);
-  if (!adminSession) return;
+  if (!requireOperatorAction(req, res, sendJson)) return;
   const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
-  const grantedBy = adminSession.email;
+  const grantedBy = 'operator';
   const skin = req.body?.skin;
   if (!targetEmail || !skin?.id) {
     sendJson(res, 400, { error: 'invalid grant' });
     return;
   }
+  if (rejectSelfGrant(sendJson, res, req.body?.grantedBy, targetEmail)) return;
   const quantity = Math.min(99, Math.max(1, Math.floor(req.body?.quantity ?? 1)));
   const safeSkin = {
     id: String(skin.id).slice(0, 128),
@@ -1631,15 +1624,15 @@ app.post('/api/balance-grants/ack', async (req, res) => {
 });
 
 app.post('/api/balance-grants', async (req, res) => {
-  const adminSession = await requireAdminSession(req, res);
-  if (!adminSession) return;
+  if (!requireOperatorAction(req, res, sendJson)) return;
   const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
-  const grantedBy = adminSession.email;
+  const grantedBy = 'operator';
   const amount = Number(req.body?.amount);
   if (!targetEmail || !Number.isFinite(amount) || amount <= 0) {
     sendJson(res, 400, { error: 'invalid grant' });
     return;
   }
+  if (rejectSelfGrant(sendJson, res, req.body?.grantedBy, targetEmail)) return;
   const safeAmount = Math.min(500_000, Math.max(1, Math.floor(amount)));
   const store = loadBalanceGrantStore(targetEmail);
   const now = Date.now();
@@ -1685,10 +1678,9 @@ app.post('/api/level-grants/ack', async (req, res) => {
 });
 
 app.post('/api/level-grants', async (req, res) => {
-  const adminSession = await requireAdminSession(req, res);
-  if (!adminSession) return;
+  if (!requireOperatorAction(req, res, sendJson)) return;
   const targetEmail = req.body?.targetEmail?.trim().toLowerCase();
-  const grantedBy = adminSession.email;
+  const grantedBy = 'operator';
   const level = Math.floor(Number(req.body?.level));
   if (
     !targetEmail
@@ -1699,6 +1691,7 @@ app.post('/api/level-grants', async (req, res) => {
     sendJson(res, 400, { error: 'invalid grant' });
     return;
   }
+  if (rejectSelfGrant(sendJson, res, req.body?.grantedBy, targetEmail)) return;
   const store = loadLevelGrantStore(targetEmail);
   const now = Date.now();
   const grant = {
