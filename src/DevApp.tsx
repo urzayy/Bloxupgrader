@@ -30,7 +30,7 @@ import { findTargetForPreset } from './lib/upgradePresets';
 import { sfx, preloadRollSound } from './lib/audio';
 import { useWheelSize } from './hooks/useWheelSize';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
-import { getDisplayName, getProfileLabel, isAdmin } from './lib/auth';
+import { getDisplayName, getProfileLabel } from './lib/auth';
 import { useAuth } from './context/AuthContext';
 import { createWithdrawTicket, createDepositTicket, createRobuxDepositTicket, fetchUserWithdrawTickets, getDepositCreditAmount, getPendingWithdrawSkinIds, getTicketType, isRobuxDeposit, openOrCreateHelpTicket, type WithdrawTicket, type WithdrawTicketBundle } from './lib/withdrawChat';
 import type { AppliedDepositBonus } from './lib/depositBonusCode';
