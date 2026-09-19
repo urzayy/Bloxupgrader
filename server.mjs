@@ -19,6 +19,7 @@ import {
 } from './server/lib/sessionTokens.mjs';
 import { clearAccountByEmail as resetAccountByEmail, resetPlayerProgressByEmail } from './server/lib/accountReset.mjs';
 import { createAccountResetMarkerStore } from './server/lib/accountResetMarker.mjs';
+import { clampSyncedBalance } from './server/lib/playerStateSyncGuard.mjs';
 import { createAccountBanStore } from './server/lib/accountBanStore.mjs';
 import { resolveDepositBonus, resolveRobuxDepositBonus, initPromoCodeStore } from './server/lib/depositBonus.mjs';
 import { createPromoCodeStore } from './server/lib/promoCodeStore.mjs';
@@ -168,8 +169,6 @@ function requireCreatorSession(req, res) {
   return session;
 }
 
-const MAX_BALANCE_HARD_CAP = 2_000_000;
-const MAX_BALANCE_SYNC_INCREASE = 250_000;
 const giveawayStore = createGiveawayStore(GIVEAWAYS_DIR, GRANTS_DIR);
 const caseBattleStore = createCaseBattleStore(CASE_BATTLES_DIR);
 const withdrawChatStore = createWithdrawChatStore({ chatsDir: CHATS_DIR });
@@ -714,15 +713,15 @@ app.post('/api/player-state/sync', async (req, res) => {
       .filter(grant => grant.status === 'pending')
       .reduce((sum, grant) => sum + Math.max(0, Math.floor(Number(grant.amount) || 0)), 0);
     const existingBalance = Math.max(0, Math.floor(Number(existing?.balance) || 0));
-    const maxAllowed = Math.min(
-      MAX_BALANCE_HARD_CAP,
-      existingBalance + pendingGrants + MAX_BALANCE_SYNC_INCREASE,
+    const { nextBalance: clamped, blocked } = clampSyncedBalance(
+      existingBalance,
+      nextBalance,
+      pendingGrants,
     );
-    if (nextBalance > maxAllowed) {
-      console.warn(`[security] blocked balance inflate email=${normalizedEmail} from=${existingBalance} to=${nextBalance} max=${maxAllowed}`);
-      nextBalance = Math.min(existingBalance, maxAllowed);
+    nextBalance = clamped;
+    if (blocked) {
+      console.warn(`[security] blocked balance inflate email=${normalizedEmail} from=${existingBalance} to=${Math.floor(Number(balance) || 0)}`);
     }
-    if (nextBalance > MAX_BALANCE_HARD_CAP) nextBalance = MAX_BALANCE_HARD_CAP;
 
     const state = await playerStateStore.savePlayerState({
       userId,

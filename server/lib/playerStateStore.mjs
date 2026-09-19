@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createTimedSupabase } from './supabaseEnv.mjs';
 import { createAdminEmailsStore } from './adminEmailsStore.mjs';
+import { preferLocalFileStore } from './localFilePrefer.mjs';
 
 function normalizeEmail(email) {
   return String(email).trim().toLowerCase();
@@ -256,39 +257,66 @@ function supabaseErrorMessage(error) {
 }
 
 export function createHybridPlayerStateStore(fileStore, remoteStore) {
+  let remoteCooldownUntil = 0;
+  let remoteFailStreak = 0;
+
+  function noteRemoteFail(error) {
+    remoteFailStreak += 1;
+    const coolMs = Math.min(120_000, 5_000 * remoteFailStreak);
+    remoteCooldownUntil = Date.now() + coolMs;
+    console.error(
+      `[player-state] remote failed, using file for ${Math.round(coolMs / 1000)}s:`,
+      supabaseErrorMessage(error),
+    );
+  }
+
+  function remoteOk() {
+    remoteFailStreak = 0;
+  }
+
   return {
     type: remoteStore.type === 'supabase' ? 'hybrid-supabase' : remoteStore.type,
     async savePlayerState(payload) {
       const fileSaved = await fileStore.savePlayerState(payload);
-      void remoteStore.savePlayerState(payload).catch(error => {
-        console.error('[player-state] remote save failed, kept file copy:', supabaseErrorMessage(error));
-      });
+      if (Date.now() >= remoteCooldownUntil) {
+        void remoteStore.savePlayerState(payload).then(remoteOk).catch(noteRemoteFail);
+      }
       return fileSaved;
     },
     async getPlayerStateByEmail(email) {
+      // File-first so local/dev never stalls on a dead remote.
+      const local = await fileStore.getPlayerStateByEmail(email);
+      if (local || Date.now() < remoteCooldownUntil) return local;
+
       try {
         const remote = await remoteStore.getPlayerStateByEmail(email);
+        remoteOk();
         if (remote) return remote;
       } catch (error) {
-        console.error('[player-state] remote read failed, trying file:', supabaseErrorMessage(error));
+        noteRemoteFail(error);
       }
-      return fileStore.getPlayerStateByEmail(email);
+      return local;
     },
     async clearByEmail(email) {
       await fileStore.clearByEmail(email);
+      if (Date.now() < remoteCooldownUntil) return;
       try {
         await remoteStore.clearByEmail(email);
+        remoteOk();
       } catch (error) {
-        console.error('[player-state] remote clear failed:', supabaseErrorMessage(error));
+        noteRemoteFail(error);
       }
     },
     async clearAllBalances() {
       const fileResult = await fileStore.clearAllBalances();
       let remoteResult = { cleared: 0, updatedAt: fileResult.updatedAt };
-      try {
-        remoteResult = await remoteStore.clearAllBalances();
-      } catch (error) {
-        console.error('[player-state] remote clear-all failed:', supabaseErrorMessage(error));
+      if (Date.now() >= remoteCooldownUntil) {
+        try {
+          remoteResult = await remoteStore.clearAllBalances();
+          remoteOk();
+        } catch (error) {
+          noteRemoteFail(error);
+        }
       }
       return {
         cleared: Math.max(fileResult.cleared, remoteResult.cleared),
@@ -313,6 +341,13 @@ export function createPlayerStateStore({ playerStateDir, adminEmailsStore }) {
     || process.env.SUPABASE_SERVICE_ROLE_KEY
     || ''
   ).trim();
+
+  if (preferLocalFileStore()) {
+    if (url && secret) {
+      console.log('[player-state] local file-only (skip Supabase in this environment)');
+    }
+    return fileStore;
+  }
 
   if (url && secret) {
     return createHybridPlayerStateStore(

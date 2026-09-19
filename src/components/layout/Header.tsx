@@ -1,25 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, lazy, Suspense } from 'react';
 import { inventoryTotal } from '../../lib/inventory';
 import { CoinPrice } from '../ui/CoinPrice';
 import { useAuth } from '../../context/AuthContext';
-import { AdminSkinPicker } from '../admin/AdminSkinPicker';
-import { AdminGiftPanel } from '../admin/AdminGiftPanel';
-import { AdminGiftMoneyPanel } from '../admin/AdminGiftMoneyPanel';
-import { AdminAddLevelPanel } from '../admin/AdminAddLevelPanel';
-import { AdminWithdrawInbox } from '../admin/AdminWithdrawInbox';
-import { AdminChatNotificationStack } from '../admin/AdminChatNotificationStack';
-import { AdminUserDbPanel } from '../admin/AdminUserDbPanel';
-import { AdminSeePanel } from '../admin/AdminSeePanel';
-import { AdminClearPanel } from '../admin/AdminClearPanel';
-import { AdminAnnouncementPanel } from '../admin/AdminAnnouncementPanel';
-import { WithdrawModal } from '../withdraw/WithdrawModal';
-import { WithdrawChatModal } from '../withdraw/WithdrawChatModal';
-import { DepositModal, type DepositItem } from '../deposit/DepositModal';
-import { DepositMethodModal } from '../deposit/DepositMethodModal';
-import { RobuxDepositModal } from '../deposit/RobuxDepositModal';
+import type { DepositItem } from '../deposit/DepositModal';
 import type { AppliedDepositBonus } from '../../lib/depositBonusCode';
-import { LiveChatsInbox } from '../support/LiveChatsInbox';
-import { LiveChatsFloatingButton } from '../support/LiveChatsFloatingButton';
 import { fetchUserWithdrawTickets, fetchWithdrawTicket, type WithdrawTicket, type WithdrawTicketBundle } from '../../lib/withdrawChat';
 import { useAdminChatNotifications } from '../../lib/adminChatNotifications';
 import { useActivityLog } from '../../hooks/useActivityLog';
@@ -35,6 +19,58 @@ import { ProfileMenu } from './ProfileMenu';
 import { LogoutDoorButton } from './LogoutDoorButton';
 import { DiscordLinkButton } from '../ui/DiscordLinkButton';
 import type { Skin } from '../../data/skins';
+
+const AdminSkinPicker = lazy(() =>
+  import('../admin/AdminSkinPicker').then(m => ({ default: m.AdminSkinPicker })),
+);
+const AdminGiftPanel = lazy(() =>
+  import('../admin/AdminGiftPanel').then(m => ({ default: m.AdminGiftPanel })),
+);
+const AdminGiftMoneyPanel = lazy(() =>
+  import('../admin/AdminGiftMoneyPanel').then(m => ({ default: m.AdminGiftMoneyPanel })),
+);
+const AdminAddLevelPanel = lazy(() =>
+  import('../admin/AdminAddLevelPanel').then(m => ({ default: m.AdminAddLevelPanel })),
+);
+const AdminWithdrawInbox = lazy(() =>
+  import('../admin/AdminWithdrawInbox').then(m => ({ default: m.AdminWithdrawInbox })),
+);
+const AdminChatNotificationStack = lazy(() =>
+  import('../admin/AdminChatNotificationStack').then(m => ({ default: m.AdminChatNotificationStack })),
+);
+const AdminUserDbPanel = lazy(() =>
+  import('../admin/AdminUserDbPanel').then(m => ({ default: m.AdminUserDbPanel })),
+);
+const AdminSeePanel = lazy(() =>
+  import('../admin/AdminSeePanel').then(m => ({ default: m.AdminSeePanel })),
+);
+const AdminClearPanel = lazy(() =>
+  import('../admin/AdminClearPanel').then(m => ({ default: m.AdminClearPanel })),
+);
+const AdminAnnouncementPanel = lazy(() =>
+  import('../admin/AdminAnnouncementPanel').then(m => ({ default: m.AdminAnnouncementPanel })),
+);
+const WithdrawModal = lazy(() =>
+  import('../withdraw/WithdrawModal').then(m => ({ default: m.WithdrawModal })),
+);
+const WithdrawChatModal = lazy(() =>
+  import('../withdraw/WithdrawChatModal').then(m => ({ default: m.WithdrawChatModal })),
+);
+const DepositModal = lazy(() =>
+  import('../deposit/DepositModal').then(m => ({ default: m.DepositModal })),
+);
+const DepositMethodModal = lazy(() =>
+  import('../deposit/DepositMethodModal').then(m => ({ default: m.DepositMethodModal })),
+);
+const RobuxDepositModal = lazy(() =>
+  import('../deposit/RobuxDepositModal').then(m => ({ default: m.RobuxDepositModal })),
+);
+const LiveChatsInbox = lazy(() =>
+  import('../support/LiveChatsInbox').then(m => ({ default: m.LiveChatsInbox })),
+);
+const LiveChatsFloatingButton = lazy(() =>
+  import('../support/LiveChatsFloatingButton').then(m => ({ default: m.LiveChatsFloatingButton })),
+);
 
 interface Props {
   inventory: Skin[];
@@ -234,6 +270,7 @@ export function Header({
 
   return (
     <>
+      <Suspense fallback={null}>
       {user && isAdmin && (
         <AdminChatNotificationStack
           toasts={adminChatToasts}
@@ -244,6 +281,7 @@ export function Header({
           }}
         />
       )}
+      {adminOpen && (
       <AdminSkinPicker
         open={adminOpen}
         onClose={() => setAdminOpen(false)}
@@ -252,7 +290,8 @@ export function Header({
           setAdminOpen(false);
         }}
       />
-      {user && isAdmin && (
+      )}
+      {user && isAdmin && giftMoneyOpen && (
         <AdminGiftMoneyPanel
           open={giftMoneyOpen}
           adminEmail={user.email}
@@ -295,6 +334,7 @@ export function Header({
           }}
         />
       )}
+      {withdrawOpen ? (
       <WithdrawModal
         open={withdrawOpen}
         inventory={inventory}
@@ -310,13 +350,16 @@ export function Header({
           return bundle;
         }}
       />
+      ) : null}
+      {depositMethodOpen ? (
       <DepositMethodModal
         open={depositMethodOpen}
         onClose={() => setDepositMethodOpen(false)}
         onSelectRobux={() => setRobuxDepositOpen(true)}
         onSelectSkins={() => setDepositOpen(true)}
       />
-      {onRobuxDepositRequest && (
+      ) : null}
+      {onRobuxDepositRequest && robuxDepositOpen ? (
         <RobuxDepositModal
           open={robuxDepositOpen}
           onClose={() => setRobuxDepositOpen(false)}
@@ -326,7 +369,8 @@ export function Header({
             return bundle;
           }}
         />
-      )}
+      ) : null}
+      {depositOpen ? (
       <DepositModal
         open={depositOpen}
         onClose={() => setDepositOpen(false)}
@@ -336,15 +380,16 @@ export function Header({
           return bundle;
         }}
       />
-      {user && (
+      ) : null}
+      {user && liveChatsOpen ? (
         <LiveChatsInbox
           open={liveChatsOpen}
           userId={user.userId}
           onClose={() => setLiveChatsOpen(false)}
           onOpenTicket={openSupportChat}
         />
-      )}
-      {user && !isAdmin && (
+      ) : null}
+      {user && !isAdmin ? (
         <LiveChatsFloatingButton
           open={liveChatsOpen}
           openCount={openLiveChatCount}
@@ -353,8 +398,8 @@ export function Header({
             setLiveChatsOpen(true);
           }}
         />
-      )}
-      {user && (
+      ) : null}
+      {user && supportChatOpen ? (
         <WithdrawChatModal
           key={supportChatTicketId ?? 'closed'}
           open={supportChatOpen}
@@ -368,12 +413,14 @@ export function Header({
           }}
           onTicketCompleted={onSupportTicketCompleted}
         />
-      )}
+      ) : null}
+      {adminInboxOpen ? (
       <AdminWithdrawInbox
         open={adminInboxOpen}
         onClose={() => setAdminInboxOpen(false)}
         onOpenTicket={openSupportChat}
       />
+      ) : null}
       {user && isAdmin && (
         <AdminClearPanel
           open={clearOpen}
@@ -413,6 +460,7 @@ export function Header({
           onClose={() => setUserDbOpen(false)}
         />
       )}
+      </Suspense>
 
       <header className={
         DEV_MOBILE_LAYOUT

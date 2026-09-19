@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { LayoutGroup } from 'framer-motion';
 import { Header } from './components/layout/Header';
 import { SiteFooter } from './components/layout/SiteFooter';
 import { LiveFeed } from './components/layout/LiveFeed';
-import { UpgradePage } from './pages/UpgradePage';
 import { ParticleField } from './components/effects/ParticleField';
 import { LoginModal } from './components/auth/LoginModal';
 import { TARGET_POOL, sortSkinsByPriceDesc, type Skin, type FeedItem } from './data/skins';
@@ -79,24 +78,64 @@ import { clearFreeCaseCooldowns } from './lib/freeCaseCooldown';
 import { registerBattleEntryHandlers, registerGrantBalanceHandler, registerGrantSkinsHandler, registerSellSkinHandler, registerSyncPlayerHandler, registerUpgradeWithSkinHandler } from './lib/uiActions';
 import { bootstrapCaseBattleEngine } from './lib/caseBattleEngine';
 import { archiveInventorySkins, attachFairProofToArchivedSkins } from './lib/inventoryArchiveStorage';
-import { ProfilePage } from './pages/ProfilePage';
-import { MainPage } from './pages/MainPage';
-import { CaseBattlesPage } from './pages/CaseBattlesPage';
-import { CaseBattleDetailPage } from './pages/CaseBattleDetailPage';
-import { CreateCaseBattlePage } from './pages/CreateCaseBattlePage';
-import { CaseDetailPage } from './pages/CaseDetailPage';
-import { FreeCasesPage } from './pages/FreeCasesPage';
-import { FreeCaseDetailPage } from './pages/FreeCaseDetailPage';
-import { GiveawaysPage } from './pages/GiveawaysPage';
-import { GiveawayDetailPage } from './pages/GiveawayDetailPage';
 import { GiveawayWinModal } from './components/giveaways/GiveawayWinModal';
 import { PlayerAnnouncementModal } from './components/announcements/PlayerAnnouncementModal';
 import { usePlayerAnnouncement } from './hooks/usePlayerAnnouncement';
-import { AdminPage } from './pages/AdminPage';
-import { TermsOfServicePage } from './pages/TermsOfServicePage';
-import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
-import { CookiePolicyPage } from './pages/CookiePolicyPage';
-import { ProvablyFairPage } from './pages/ProvablyFairPage';
+import { MainPage } from './pages/MainPage';
+
+const UpgradePage = lazy(() =>
+  import('./pages/UpgradePage').then(m => ({ default: m.UpgradePage })),
+);
+const ProfilePage = lazy(() =>
+  import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })),
+);
+const CaseBattlesPage = lazy(() =>
+  import('./pages/CaseBattlesPage').then(m => ({ default: m.CaseBattlesPage })),
+);
+const CaseBattleDetailPage = lazy(() =>
+  import('./pages/CaseBattleDetailPage').then(m => ({ default: m.CaseBattleDetailPage })),
+);
+const CreateCaseBattlePage = lazy(() =>
+  import('./pages/CreateCaseBattlePage').then(m => ({ default: m.CreateCaseBattlePage })),
+);
+const CaseDetailPage = lazy(() =>
+  import('./pages/CaseDetailPage').then(m => ({ default: m.CaseDetailPage })),
+);
+const FreeCasesPage = lazy(() =>
+  import('./pages/FreeCasesPage').then(m => ({ default: m.FreeCasesPage })),
+);
+const FreeCaseDetailPage = lazy(() =>
+  import('./pages/FreeCaseDetailPage').then(m => ({ default: m.FreeCaseDetailPage })),
+);
+const GiveawaysPage = lazy(() =>
+  import('./pages/GiveawaysPage').then(m => ({ default: m.GiveawaysPage })),
+);
+const GiveawayDetailPage = lazy(() =>
+  import('./pages/GiveawayDetailPage').then(m => ({ default: m.GiveawayDetailPage })),
+);
+const AdminPage = lazy(() =>
+  import('./pages/AdminPage').then(m => ({ default: m.AdminPage })),
+);
+const TermsOfServicePage = lazy(() =>
+  import('./pages/TermsOfServicePage').then(m => ({ default: m.TermsOfServicePage })),
+);
+const PrivacyPolicyPage = lazy(() =>
+  import('./pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })),
+);
+const CookiePolicyPage = lazy(() =>
+  import('./pages/CookiePolicyPage').then(m => ({ default: m.CookiePolicyPage })),
+);
+const ProvablyFairPage = lazy(() =>
+  import('./pages/ProvablyFairPage').then(m => ({ default: m.ProvablyFairPage })),
+);
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[40vh] flex-1 items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-orange-400/30 border-t-orange-400" />
+    </div>
+  );
+}
 
 export default function DevApp() {
   const { user, logout: authLogout, openLogin } = useAuth();
@@ -186,8 +225,9 @@ export default function DevApp() {
   }, []);
 
   useEffect(() => {
+    if (!isCaseBattlesPage) return;
     return bootstrapCaseBattleEngine(user?.userId);
-  }, [user?.userId]);
+  }, [user?.userId, isCaseBattlesPage]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || !user || !isProfilePage) return;
@@ -1458,6 +1498,7 @@ export default function DevApp() {
             isScrollablePage ? 'w-full' : `min-h-0 flex-1 ${DEV_MOBILE_LAYOUT ? 'lg:overflow-hidden' : ''}`
           }`}
           >
+            <Suspense fallback={<PageFallback />}>
             {isProfilePage ? (
               <ProfilePage
                 inventory={inventory}
@@ -1545,6 +1586,7 @@ export default function DevApp() {
                 onLiveHelp={() => { void handleLiveHelp(); }}
               />
             )}
+            </Suspense>
           </div>
         </div>
 

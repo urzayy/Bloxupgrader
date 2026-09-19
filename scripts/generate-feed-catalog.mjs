@@ -153,5 +153,10 @@ export function createBotFeedItem({
 }
 `;
 
-fs.writeFileSync(OUT, out, 'utf8');
-console.log(`[generate-feed-catalog] Wrote ${catalog.length} skins to ${path.relative(ROOT, OUT)}`);
+const prev = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
+if (prev === out) {
+  console.log(`[generate-feed-catalog] Unchanged (${catalog.length} skins)`);
+} else {
+  fs.writeFileSync(OUT, out, 'utf8');
+  console.log(`[generate-feed-catalog] Wrote ${catalog.length} skins to ${path.relative(ROOT, OUT)}`);
+}

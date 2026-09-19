@@ -16,6 +16,11 @@ import { adminEmailsPlugin } from './vite-admin-emails-plugin';
 import { presencePlugin } from './vite-presence-plugin';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Local Vite must not block on Supabase timeouts (keeps localhost snappy).
+process.env.BLOX_LOCAL_FILE_ONLY ??= '1';
+process.env.DURABLE_JSON ??= '0';
+
 const userDbDir = path.resolve(__dirname, 'user-db');
 const withdrawChatsDir = path.resolve(__dirname, 'withdraw-chats');
 const inventoryGrantsDir = path.resolve(__dirname, 'inventory-grants');
@@ -31,6 +36,9 @@ export default defineConfig({
   appType: 'spa',
   build: {
     sourcemap: false,
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'framer-motion'],
   },
   plugins: [
     react(),
@@ -49,9 +57,33 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-    open: true,
+    open: false,
+    warmup: {
+      clientFiles: [
+        './src/main.tsx',
+        './src/App.tsx',
+        './src/DevApp.tsx',
+        './src/components/layout/Header.tsx',
+        './src/pages/MainPage.tsx',
+        './src/pages/UpgradePage.tsx',
+      ],
+    },
     watch: {
       ignored: [
+        '**/src/lib/feedBot.mjs',
+        '**/site-state/**',
+        '**/user-db/**',
+        '**/player-state/**',
+        '**/user-logs/**',
+        '**/withdraw-chats/**',
+        '**/inventory-grants/**',
+        '**/balance-grants/**',
+        '**/level-grants/**',
+        '**/giveaways/**',
+        '**/case-battles/**',
+        '**/promo-codes/**',
+        '**/announcements/**',
+        '**/account-resets/**',
         '**/public/images/free-cases/iron-case-base.png',
         '**/public/images/free-cases/m4a1s-orchids.png',
         '**/public/images/free-cases/iron-chest-original.png',

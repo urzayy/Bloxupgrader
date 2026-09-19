@@ -9,7 +9,7 @@ import { clearAccountByEmail as resetAccountByEmail } from './server/lib/account
 import { createAccountResetMarkerStore } from './server/lib/accountResetMarker.mjs';
 import { createAccountBanStore } from './server/lib/accountBanStore.mjs';
 import { createProfilePhotoStore } from './server/lib/profilePhotoStore.mjs';
-import { shouldSkipEmptyPlayerStateOverwrite } from './server/lib/playerStateSyncGuard.mjs';
+import { shouldSkipEmptyPlayerStateOverwrite, clampSyncedBalance, normalizeInventory } from './server/lib/playerStateSyncGuard.mjs';
 
 dotenv.config();
 
@@ -223,7 +223,34 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               return;
             }
 
-            const state = await playerStateStore.savePlayerState(body);
+            let pendingGrants = 0;
+            try {
+              const grantFile = path.join(balanceGrantsDir, `${normalizedEmail.replace(/@/g, '_at_').replace(/[^a-zA-Z0-9._-]/g, '_')}.json`);
+              if (fs.existsSync(grantFile)) {
+                const parsed = JSON.parse(fs.readFileSync(grantFile, 'utf8'));
+                pendingGrants = (parsed?.grants ?? [])
+                  .filter((grant: { status?: string }) => grant.status === 'pending')
+                  .reduce((sum: number, grant: { amount?: number }) => sum + Math.max(0, Math.floor(Number(grant.amount) || 0)), 0);
+              }
+            } catch {
+              pendingGrants = 0;
+            }
+
+            const { nextBalance, blocked } = clampSyncedBalance(
+              existing?.balance,
+              body.balance,
+              pendingGrants,
+            );
+            if (blocked) {
+              console.warn(`[security] blocked balance inflate email=${normalizedEmail}`);
+            }
+
+            const state = await playerStateStore.savePlayerState({
+              userId: body.userId,
+              email: normalizedEmail,
+              balance: nextBalance,
+              inventory: normalizeInventory(body.inventory),
+            });
             sendJson(res, 200, { ok: true, state });
             return;
           }

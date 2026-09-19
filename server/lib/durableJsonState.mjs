@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createServiceSupabase } from './supabaseEnv.mjs';
+import { preferLocalFileStore } from './localFilePrefer.mjs';
 
 const TABLE = 'blox_json_state';
 const FALLBACK_TABLE = 'blox_withdraw_chats';
@@ -14,6 +15,7 @@ export function jsonStateFallbackId(key) {
 
 export function durableJsonEnabled() {
   if (process.env.DURABLE_JSON === '0') return false;
+  if (preferLocalFileStore() && process.env.DURABLE_JSON !== '1') return false;
   if (process.env.DURABLE_JSON === '1') return true;
   return Boolean(createServiceSupabase());
 }

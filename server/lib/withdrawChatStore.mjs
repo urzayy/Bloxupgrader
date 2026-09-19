@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createTimedSupabase } from './supabaseEnv.mjs';
+import { preferLocalFileStore } from './localFilePrefer.mjs';
 
 function countUnreadUserMessages(messages, lastReadAt) {
   return messages.filter(message => message.senderRole === 'user' && message.createdAt > lastReadAt).length;
@@ -252,6 +253,13 @@ export function createWithdrawChatStore({ chatsDir }) {
     || process.env.SUPABASE_SERVICE_ROLE_KEY
     || ''
   ).trim();
+
+  if (preferLocalFileStore()) {
+    if (url && secret) {
+      console.log('[withdraw-chat] local file-only (skip Supabase in this environment)');
+    }
+    return fileStore;
+  }
 
   if (url && secret) {
     return createHybridWithdrawChatStore(

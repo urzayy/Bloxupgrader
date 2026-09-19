@@ -22,6 +22,10 @@ export function createAdminEmailsStore(stateDir) {
   if (!fs.existsSync(stateDir)) fs.mkdirSync(stateDir, { recursive: true });
 
   const filePath = path.join(stateDir, 'admins.json');
+  const cacheKey = path.resolve(stateDir);
+  if (createAdminEmailsStore._cache?.has(cacheKey)) {
+    return createAdminEmailsStore._cache.get(cacheKey);
+  }
 
   function saveEmails(emails) {
     const normalized = [...new Set([
@@ -117,7 +121,7 @@ export function createAdminEmailsStore(stateDir) {
   const locked = enforceLockdown();
   console.warn(`[admins] lockdown pinned → ${locked.join(', ')}`);
 
-  return {
+  const api = {
     CREATOR_EMAIL,
     DEFAULT_ADMINS,
     listAdmins,
@@ -127,4 +131,7 @@ export function createAdminEmailsStore(stateDir) {
     removeAdmin,
     enforceLockdown,
   };
+  if (!createAdminEmailsStore._cache) createAdminEmailsStore._cache = new Map();
+  createAdminEmailsStore._cache.set(cacheKey, api);
+  return api;
 }

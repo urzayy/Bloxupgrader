@@ -1,6 +1,7 @@
 import { createUserDb } from './userDb.mjs';
 import { createSupabaseDb } from './supabaseDb.mjs';
 import { createAdminEmailsStore } from './adminEmailsStore.mjs';
+import { preferLocalFileStore } from './localFilePrefer.mjs';
 import path from 'node:path';
 
 function wrapSync(db, adminEmailsStore) {
@@ -47,6 +48,11 @@ function wrapRemote(db, adminEmailsStore) {
 }
 
 export function createUserStore({ userDbDir, adminEmailsStore }) {
+  const cacheKey = path.resolve(userDbDir);
+  if (createUserStore._cache?.has(cacheKey)) {
+    return createUserStore._cache.get(cacheKey);
+  }
+
   const resolvedAdminEmailsStore = adminEmailsStore
     ?? createAdminEmailsStore(path.join(path.dirname(userDbDir), 'site-state'));
   const fileStore = wrapSync(createUserDb(userDbDir, resolvedAdminEmailsStore), resolvedAdminEmailsStore);
@@ -57,12 +63,24 @@ export function createUserStore({ userDbDir, adminEmailsStore }) {
     || ''
   ).trim();
 
-  if (!url || !secret) return fileStore;
+  if (!url || !secret || preferLocalFileStore()) {
+    if (url && secret && preferLocalFileStore()) {
+      console.log('[user-store] local file-only (skip Supabase in this environment)');
+    }
+    if (!createUserStore._cache) createUserStore._cache = new Map();
+    createUserStore._cache.set(cacheKey, fileStore);
+    return fileStore;
+  }
 
   const remoteStore = wrapRemote(createSupabaseDb(url, secret, resolvedAdminEmailsStore), resolvedAdminEmailsStore);
   let usersCache = { at: 0, value: null };
+  let remoteCooldownUntil = 0;
+  let remoteFailStreak = 0;
 
   async function withTimeout(promise, ms, fallback) {
+    if (Date.now() < remoteCooldownUntil) {
+      return fallback();
+    }
     let timer;
     try {
       return await Promise.race([
@@ -72,14 +90,20 @@ export function createUserStore({ userDbDir, adminEmailsStore }) {
         }),
       ]);
     } catch (error) {
-      console.error('[user-store] remote failed, using file:', error instanceof Error ? error.message : error);
+      remoteFailStreak += 1;
+      const coolMs = Math.min(120_000, 5_000 * remoteFailStreak);
+      remoteCooldownUntil = Date.now() + coolMs;
+      console.error(
+        `[user-store] remote failed, using file for ${Math.round(coolMs / 1000)}s:`,
+        error instanceof Error ? error.message : error,
+      );
       return fallback();
     } finally {
       if (timer) clearTimeout(timer);
     }
   }
 
-  return {
+  const hybrid = {
     ...fileStore,
     type: 'hybrid-supabase',
     checkConnection: () => withTimeout(remoteStore.checkConnection(), 5000, () => fileStore.checkConnection()),
@@ -212,4 +236,7 @@ export function createUserStore({ userDbDir, adminEmailsStore }) {
       return local;
     },
   };
+  if (!createUserStore._cache) createUserStore._cache = new Map();
+  createUserStore._cache.set(cacheKey, hybrid);
+  return hybrid;
 }
