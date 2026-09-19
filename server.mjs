@@ -196,7 +196,10 @@ const withdrawChatStore = createWithdrawChatStore({ chatsDir: CHATS_DIR });
 console.log(`[withdraw-chat] using ${withdrawChatStore.type} store`);
 console.log(`[data] DATA_DIR=${DATA_DIR}`);
 
-await maybeRunBootFullReset(process.env.FORCE_FULL_RESET_ONCE, DATA_DIR, {
+await maybeRunBootFullReset(
+  process.env.FORCE_FULL_RESET_ONCE || '2026-09-19-blox',
+  DATA_DIR,
+  {
   playerStateStore,
   resetMarkerStore,
   announcementStore,
@@ -209,7 +212,8 @@ await maybeRunBootFullReset(process.env.FORCE_FULL_RESET_ONCE, DATA_DIR, {
   giveawaysDir: GIVEAWAYS_DIR,
   logsDir: LOGS_DIR,
   accountResetsDir: ACCOUNT_RESETS_DIR,
-});
+},
+);
 
 if (durableJsonEnabled()) {
   setInterval(() => {
