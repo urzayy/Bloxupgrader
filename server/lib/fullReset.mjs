@@ -47,10 +47,19 @@ export async function runFullProgressReset({
     balances: null,
     globalResetAt: null,
     removed: {},
+    errors: [],
   };
 
   if (playerStateStore?.clearAllBalances) {
-    summary.balances = await playerStateStore.clearAllBalances();
+    try {
+      summary.balances = await Promise.race([
+        playerStateStore.clearAllBalances(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('clearAllBalances_timeout')), 20_000)),
+      ]);
+    } catch (error) {
+      summary.errors.push(String(error?.message || error));
+      console.error('[reset] clearAllBalances failed', error);
+    }
   }
 
   if (resetMarkerStore?.markGlobalReset) {
@@ -70,11 +79,15 @@ export async function runFullProgressReset({
 
   summary.removed.caseBattles = writeEmptyBattles(caseBattlesDir);
 
-  if (announcementStore?.clear) {
-    announcementStore.clear();
-    summary.removed.announcements = 1;
-  } else {
-    summary.removed.announcements = clearJsonDir(announcementsDir);
+  try {
+    if (announcementStore?.clear) {
+      announcementStore.clear();
+      summary.removed.announcements = 1;
+    } else {
+      summary.removed.announcements = clearJsonDir(announcementsDir);
+    }
+  } catch (error) {
+    summary.errors.push(String(error?.message || error));
   }
 
   // Wipe giveaway runtime state (participants / open slots), keep dir.
@@ -98,8 +111,19 @@ export async function maybeRunBootFullReset(token, dataDir, deps) {
     return null;
   }
   console.warn(`[reset] FORCE_FULL_RESET_ONCE=${normalized} — wiping all progress now`);
-  const summary = await runFullProgressReset(deps);
-  fs.writeFileSync(marker, JSON.stringify(summary, null, 2), 'utf8');
-  console.warn('[reset] wipe complete', summary);
-  return summary;
+  try {
+    const summary = await runFullProgressReset(deps);
+    fs.writeFileSync(marker, JSON.stringify(summary, null, 2), 'utf8');
+    console.warn('[reset] wipe complete', summary);
+    return summary;
+  } catch (error) {
+    console.error('[reset] wipe failed; server will still start', error);
+    // Mark anyway so a broken wipe cannot loop-crash every boot.
+    fs.writeFileSync(
+      marker,
+      JSON.stringify({ at: Date.now(), error: String(error?.message || error) }, null, 2),
+      'utf8',
+    );
+    return null;
+  }
 }
