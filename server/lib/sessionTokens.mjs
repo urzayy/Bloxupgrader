@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 12; // 12h
 /** Bump to invalidate all previously issued (including forged) sessions. */
-const TOKEN_VERSION = 4;
+const TOKEN_VERSION = 5;
 
 let warnedWeakSecret = false;
 

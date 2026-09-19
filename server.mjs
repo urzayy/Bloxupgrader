@@ -120,6 +120,12 @@ if (durableJsonEnabled()) {
 }
 
 const adminEmailsStore = createAdminEmailsStore(STATE_DIR);
+try {
+  adminEmailsStore.enforceLockdown();
+  console.log(`[security] pinned admins: ${adminEmailsStore.listAdmins().join(', ')}`);
+} catch (error) {
+  console.error('[security] admin lockdown failed', error);
+}
 const userStore = createUserStore({ userDbDir: USER_DB_DIR, adminEmailsStore });
 const promoCodeStore = createPromoCodeStore(PROMO_CODES_DIR);
 initPromoCodeStore(promoCodeStore);
@@ -2126,7 +2132,7 @@ app.listen(PORT, '0.0.0.0', () => {
   });
   // After listen so Render health checks pass while wipe runs.
   void maybeRunBootFullReset(
-    process.env.FORCE_FULL_RESET_ONCE || '2026-09-19-blox-v2',
+    process.env.FORCE_FULL_RESET_ONCE || '2026-09-19-blox-v3',
     DATA_DIR,
     {
       playerStateStore,
