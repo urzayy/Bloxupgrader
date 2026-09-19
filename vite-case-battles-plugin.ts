@@ -68,18 +68,34 @@ export function caseBattlesPlugin(caseBattlesDir: string): Plugin {
           if (detailMatch && req.method === 'PUT') {
             const session = await requireBoundUser(req, res, userStore);
             if (!session) return;
-            const body = await readJsonBody(req) as { battle?: { id?: string; createdByUserId?: string; players?: Array<{ isBot?: boolean; id?: string; userId?: string }> } };
+            const body = await readJsonBody(req) as {
+              battle?: {
+                id?: string;
+                createdByUserId?: string;
+                hostUserId?: string;
+                players?: Array<{ isBot?: boolean; id?: string; userId?: string }>;
+              };
+            };
             const battle = body.battle;
             if (!battle?.id || String(battle.id).toLowerCase() !== detailMatch[1].toLowerCase()) {
               sendJson(res, 400, { error: 'invalid_battle' });
               return;
             }
+            const existing = caseBattleStore.getById(detailMatch[1]);
             const isCreator = String(battle.createdByUserId || '').toLowerCase() === String(session.userId).toLowerCase();
             const isParticipant = isBattleParticipant(battle, session.userId);
+            const wasParticipant = existing ? isBattleParticipant(existing, session.userId) : false;
             const isAdmin = adminEmailsStore.isAdminEmail(session.email);
-            if (!isCreator && !isParticipant && !isAdmin) {
+            if (!isCreator && !isParticipant && !wasParticipant && !isAdmin) {
               sendJson(res, 403, { error: 'forbidden', message: 'Not a battle participant.' });
               return;
+            }
+            if (existing) {
+              battle.createdByUserId = existing.createdByUserId ?? existing.hostUserId;
+              if (existing.hostUserId) battle.hostUserId = existing.hostUserId;
+            } else {
+              battle.createdByUserId = session.userId;
+              battle.hostUserId = session.userId;
             }
             const result = caseBattleStore.upsert(battle);
             if (result.error) {

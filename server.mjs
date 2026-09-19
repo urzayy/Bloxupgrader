@@ -643,15 +643,20 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/session', async (req, res) => {
+  const started = Date.now();
+  const finish = (status, data) => {
+    const wait = Math.max(0, 250 - (Date.now() - started));
+    setTimeout(() => sendJson(res, status, data), wait);
+  };
   try {
     const { email, password } = req.body ?? {};
     if (!email || !password) {
-      sendJson(res, 400, { error: 'bad request' });
+      finish(400, { error: 'bad request' });
       return;
     }
     const normalizedEmail = String(email).trim().toLowerCase();
     if (banStore.isBanned(normalizedEmail)) {
-      sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
+      finish(403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
       return;
     }
     const auth = await Promise.race([
@@ -659,11 +664,11 @@ app.post('/api/auth/session', async (req, res) => {
       new Promise(resolve => setTimeout(() => resolve({ ok: false, notFound: true }), 3000)),
     ]);
     if (auth.notFound) {
-      sendJson(res, 404, { ok: false, notFound: true });
+      finish(404, { ok: false, notFound: true });
       return;
     }
     if (!auth.ok) {
-      sendJson(res, 401, { ok: false, error: 'wrong_password' });
+      finish(401, { ok: false, error: 'wrong_password' });
       return;
     }
     let playerState = null;
@@ -675,7 +680,7 @@ app.post('/api/auth/session', async (req, res) => {
     } catch {
       playerState = null;
     }
-    sendJson(res, 200, {
+    finish(200, {
       ok: true,
       user: {
         userId: auth.userId,
@@ -688,7 +693,7 @@ app.post('/api/auth/session', async (req, res) => {
     });
   } catch (error) {
     console.error('[auth/session]', error);
-    sendJson(res, 500, { error: 'error' });
+    finish(500, { error: 'error' });
   }
 });
 
@@ -1048,16 +1053,24 @@ app.put('/api/case-battles/:battleId', (req, res) => {
     sendJson(res, 400, { error: 'invalid_battle' });
     return;
   }
+  const existing = caseBattleStore.get(req.params.battleId);
   const isCreator = String(battle.createdByUserId || '').toLowerCase() === String(session.userId).toLowerCase();
   const isParticipant = Array.isArray(battle.players)
     && battle.players.some(p => !p?.isBot && String(p?.id || '').toLowerCase() === String(session.userId).toLowerCase());
-  const existing = caseBattleStore.get(req.params.battleId);
   const wasParticipant = existing
     && Array.isArray(existing.players)
     && existing.players.some(p => !p?.isBot && String(p?.id || '').toLowerCase() === String(session.userId).toLowerCase());
   if (!isCreator && !isParticipant && !wasParticipant && !adminEmailsStore.isAdminEmail(session.email)) {
     sendJson(res, 403, { error: 'forbidden', message: 'Not a battle participant.' });
     return;
+  }
+  // Never let clients reassign host ownership of an existing battle.
+  if (existing) {
+    battle.createdByUserId = existing.createdByUserId ?? existing.hostUserId;
+    if (existing.hostUserId) battle.hostUserId = existing.hostUserId;
+  } else {
+    battle.createdByUserId = session.userId;
+    battle.hostUserId = session.userId;
   }
   const result = caseBattleStore.upsert(battle);
   if (result.error) {
