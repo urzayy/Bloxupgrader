@@ -1,9 +1,12 @@
+import path from 'node:path';
 import type { Plugin } from 'vite';
 import {
   getActivePresenceCount,
   registerPresenceHeartbeat,
 } from './server/lib/presenceStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { createUserStore } from './server/lib/userStore.mjs';
+import { requireAdmin, sendJson } from './server/lib/httpAuth.mjs';
 
 function readBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -14,18 +17,10 @@ function readBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => voi
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s?: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-
 export function presencePlugin(stateDir: string): Plugin {
   const adminEmailsStore = createAdminEmailsStore(stateDir);
+  const userDbDir = path.resolve(path.dirname(stateDir), 'user-db');
+  const userStore = createUserStore({ userDbDir, adminEmailsStore });
 
   return {
     name: 'presence-api',
@@ -46,14 +41,8 @@ export function presencePlugin(stateDir: string): Plugin {
           }
 
           if (req.method === 'GET' && url === '/api/admin/presence') {
-            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams
-              .get('adminEmail')
-              ?.trim()
-              .toLowerCase() ?? '';
-            if (!adminEmailsStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             sendJson(res, 200, {
               count: getActivePresenceCount(),
               updatedAt: Date.now(),

@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
+import { createUserStore } from './server/lib/userStore.mjs';
+import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
 
 interface GrantSkin {
   id: string;
@@ -39,16 +42,6 @@ function readBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => voi
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s?: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-
 function storePath(grantsDir: string, email: string): string {
   return path.join(grantsDir, `${sanitizeEmail(email)}.json`);
 }
@@ -72,7 +65,31 @@ function saveStore(grantsDir: string, store: GrantStore) {
   fs.writeFileSync(storePath(grantsDir, store.email), JSON.stringify(store, null, 2), 'utf8');
 }
 
+async function requireSelfOrAdmin(
+  req: unknown,
+  res: unknown,
+  userStore: ReturnType<typeof createUserStore>,
+  adminEmailsStore: ReturnType<typeof createAdminEmailsStore>,
+  email: string,
+) {
+  const session = await requireBoundUser(req, res, userStore);
+  if (!session) return null;
+  const normalized = email.trim().toLowerCase();
+  if (session.email === normalized || adminEmailsStore.isAdminEmail(session.email)) {
+    return session;
+  }
+  sendJson(res, 403, { error: 'forbidden', message: 'Session mismatch.' });
+  return null;
+}
+
 export function inventoryGrantsPlugin(grantsDir: string): Plugin {
+  const root = path.dirname(grantsDir);
+  const adminEmailsStore = createAdminEmailsStore(path.resolve(root, 'site-state'));
+  const userStore = createUserStore({
+    userDbDir: path.resolve(root, 'user-db'),
+    adminEmailsStore,
+  });
+
   return {
     name: 'inventory-grants-api',
     configureServer(server) {
@@ -90,6 +107,8 @@ export function inventoryGrantsPlugin(grantsDir: string): Plugin {
               sendJson(res, 400, { error: 'email required' });
               return;
             }
+            const session = await requireSelfOrAdmin(req, res, userStore, adminEmailsStore, email);
+            if (!session) return;
             const store = loadStore(grantsDir, email);
             const grants = store.grants.filter(g => g.status === 'pending');
             sendJson(res, 200, { grants });
@@ -103,6 +122,8 @@ export function inventoryGrantsPlugin(grantsDir: string): Plugin {
               sendJson(res, 400, { error: 'invalid ack' });
               return;
             }
+            const session = await requireSelfOrAdmin(req, res, userStore, adminEmailsStore, email);
+            if (!session) return;
             const store = loadStore(grantsDir, email);
             const ids = new Set(body.grantIds);
             store.grants = store.grants.map(g =>
@@ -114,25 +135,35 @@ export function inventoryGrantsPlugin(grantsDir: string): Plugin {
           }
 
           if (req.method === 'POST' && url === '/api/inventory-grants') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const body = JSON.parse(await readBody(req)) as {
               targetEmail: string;
-              grantedBy: string;
               skin: GrantSkin;
               quantity?: number;
             };
             const targetEmail = body.targetEmail?.trim().toLowerCase();
-            if (!targetEmail || !body.skin?.id || !body.grantedBy) {
+            if (!targetEmail || !body.skin?.id) {
               sendJson(res, 400, { error: 'invalid grant' });
               return;
             }
             const quantity = Math.min(99, Math.max(1, Math.floor(body.quantity ?? 1)));
+            const safeSkin: GrantSkin = {
+              id: String(body.skin.id).slice(0, 128),
+              name: String(body.skin.name || 'Item').slice(0, 128),
+              weapon: String(body.skin.weapon || '').slice(0, 64),
+              rarity: String(body.skin.rarity || '').slice(0, 32),
+              wear: String(body.skin.wear || '').slice(0, 32),
+              price: Math.min(500_000, Math.max(0, Math.floor(Number(body.skin.price) || 0))),
+              image: String(body.skin.image || '').slice(0, 512),
+            };
             const store = loadStore(grantsDir, targetEmail);
             const now = Date.now();
             const grants: InventoryGrant[] = Array.from({ length: quantity }, (_, index) => ({
               id: `grant_${now}_${index}_${Math.random().toString(36).slice(2, 8)}`,
               targetEmail,
-              grantedBy: body.grantedBy.trim().toLowerCase(),
-              skin: body.skin,
+              grantedBy: session.email,
+              skin: safeSkin,
               createdAt: now + index,
               status: 'pending' as const,
             }));

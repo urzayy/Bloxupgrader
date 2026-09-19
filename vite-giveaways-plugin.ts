@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createGiveawayStore } from './server/lib/giveawayStore.mjs';
 import { createUserStore } from './server/lib/userStore.mjs';
+import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
 
 function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -18,20 +20,12 @@ function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) =>
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-
 export function giveawaysPlugin(giveawaysDir: string, userDbDir: string, grantsDir: string): Plugin {
   if (!fs.existsSync(giveawaysDir)) fs.mkdirSync(giveawaysDir, { recursive: true });
+  const siteStateDir = path.resolve(path.dirname(userDbDir), 'site-state');
+  const adminEmailsStore = createAdminEmailsStore(siteStateDir);
   const giveawayStore = createGiveawayStore(giveawaysDir, grantsDir);
-  const userStore = createUserStore({ userDbDir });
+  const userStore = createUserStore({ userDbDir, adminEmailsStore });
 
   return {
     name: 'giveaways-api',
@@ -60,14 +54,19 @@ export function giveawaysPlugin(giveawaysDir: string, userDbDir: string, grantsD
           }
 
           if (url === '/api/giveaways/join' && req.method === 'POST') {
+            const session = await requireBoundUser(req, res, userStore);
+            if (!session) return;
             const body = await readJsonBody(req) as {
               period?: string;
-              userId?: string;
-              email?: string;
               nickname?: string;
               avatarId?: number;
             };
-            const result = giveawayStore.joinGiveaway(body.period, body);
+            const result = giveawayStore.joinGiveaway(body.period, {
+              userId: session.userId,
+              email: session.email,
+              nickname: body.nickname,
+              avatarId: body.avatarId,
+            });
             if (result.error) {
               sendJson(res, 400, { error: result.error });
               return;
@@ -77,21 +76,20 @@ export function giveawaysPlugin(giveawaysDir: string, userDbDir: string, grantsD
           }
 
           if (url === '/api/giveaways/deposit-record' && req.method === 'POST') {
+            const session = await requireBoundUser(req, res, userStore);
+            if (!session) return;
             const body = await readJsonBody(req) as {
-              userId?: string;
               amount?: number;
-              email?: string;
               nickname?: string;
               avatarId?: number;
             };
-            const userId = String(body.userId ?? '').trim();
             const amount = Number(body.amount);
-            if (!userId || !Number.isFinite(amount) || amount <= 0) {
+            if (!Number.isFinite(amount) || amount <= 0) {
               sendJson(res, 400, { error: 'invalid_payload' });
               return;
             }
-            const updates = giveawayStore.recordUserDeposit(userId, amount, {
-              email: body.email,
+            const updates = giveawayStore.recordUserDeposit(session.userId, Math.min(amount, 50000), {
+              email: session.email,
               nickname: body.nickname,
               avatarId: body.avatarId,
             });
@@ -107,25 +105,22 @@ export function giveawaysPlugin(giveawaysDir: string, userDbDir: string, grantsD
           }
 
           if (url === '/api/giveaways/pending-win' && req.method === 'GET') {
-            const query = new URL(req.url ?? '', 'http://localhost').searchParams;
-            const userId = query.get('userId') ?? '';
-            if (!userId) {
-              sendJson(res, 400, { error: 'userId required' });
-              return;
-            }
-            sendJson(res, 200, giveawayStore.listPendingWins(userId));
+            const session = await requireBoundUser(req, res, userStore);
+            if (!session) return;
+            sendJson(res, 200, giveawayStore.listPendingWins(session.userId));
             return;
           }
 
           if (url === '/api/giveaways/pending-win/ack' && req.method === 'POST') {
-            const body = await readJsonBody(req) as { userId?: string; pendingId?: string };
-            const userId = String(body.userId ?? '').trim();
+            const session = await requireBoundUser(req, res, userStore);
+            if (!session) return;
+            const body = await readJsonBody(req) as { pendingId?: string };
             const pendingId = String(body.pendingId ?? '').trim();
-            if (!userId || !pendingId) {
+            if (!pendingId) {
               sendJson(res, 400, { error: 'invalid_ack' });
               return;
             }
-            const result = giveawayStore.ackPendingWin(userId, pendingId);
+            const result = giveawayStore.ackPendingWin(session.userId, pendingId);
             if (result.error) {
               sendJson(res, 400, { error: result.error });
               return;
@@ -135,21 +130,18 @@ export function giveawaysPlugin(giveawaysDir: string, userDbDir: string, grantsD
           }
 
           if (url === '/api/admin/giveaways/open' && req.method === 'POST') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const body = await readJsonBody(req) as {
-              adminEmail?: string;
               period?: string;
               skin?: unknown;
               depositRequirement?: number;
             };
-            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
             const result = giveawayStore.openGiveaway({
               period: body.period,
               skin: body.skin,
               depositRequirement: body.depositRequirement,
-              openedBy: body.adminEmail,
+              openedBy: session.email,
             });
             if (result.error) {
               sendJson(res, 400, { error: result.error });
@@ -160,19 +152,16 @@ export function giveawaysPlugin(giveawaysDir: string, userDbDir: string, grantsD
           }
 
           if (url === '/api/admin/giveaways/close' && req.method === 'POST') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const body = await readJsonBody(req) as {
-              adminEmail?: string;
               period?: string;
               pickWinner?: boolean;
             };
-            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
             const result = giveawayStore.closeGiveaway({
               period: body.period,
               pickWinner: Boolean(body.pickWinner),
-              grantedBy: body.adminEmail,
+              grantedBy: session.email,
             });
             if (result.error) {
               sendJson(res, 400, { error: result.error });

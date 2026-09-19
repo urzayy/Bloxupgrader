@@ -1,6 +1,9 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { createUserStore } from './server/lib/userStore.mjs';
+import { requireCreator, sendJson } from './server/lib/httpAuth.mjs';
 
 function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -16,19 +19,11 @@ function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) =>
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-
 export function adminEmailsPlugin(stateDir: string): Plugin {
   if (!fs.existsSync(stateDir)) fs.mkdirSync(stateDir, { recursive: true });
   const adminEmailsStore = createAdminEmailsStore(stateDir);
+  const userDbDir = path.resolve(path.dirname(stateDir), 'user-db');
+  const userStore = createUserStore({ userDbDir, adminEmailsStore });
 
   return {
     name: 'admin-emails-api',
@@ -43,7 +38,6 @@ export function adminEmailsPlugin(stateDir: string): Plugin {
           if (req.method === 'GET' && url === '/api/admin/status') {
             const params = new URL(req.url ?? '', 'http://local').searchParams;
             const email = params.get('email')?.trim().toLowerCase() ?? '';
-            // Dev: still only return true for pinned admins (no client spoof expands the list).
             sendJson(res, 200, {
               isAdmin: adminEmailsStore.isAdminEmail(email),
               isCreator: adminEmailsStore.isCreatorEmail(email),
@@ -52,21 +46,19 @@ export function adminEmailsPlugin(stateDir: string): Plugin {
           }
 
           if (req.method === 'GET' && url === '/api/admin/emails') {
-            const params = new URL(req.url ?? '', 'http://local').searchParams;
-            const creatorEmail = params.get('creatorEmail')?.trim() ?? '';
-            if (!adminEmailsStore.isCreatorEmail(creatorEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireCreator(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             sendJson(res, 200, { emails: adminEmailsStore.listAdmins() });
             return;
           }
 
           if (req.method === 'POST' && url === '/api/admin/emails/add') {
-            const body = await readJsonBody(req) as { creatorEmail?: string; email?: string };
+            const session = await requireCreator(req, res, userStore, adminEmailsStore);
+            if (!session) return;
+            const body = await readJsonBody(req) as { email?: string };
             try {
               const result = adminEmailsStore.addAdmin(
-                String(body.creatorEmail ?? '').trim(),
+                session.email,
                 String(body.email ?? '').trim(),
               );
               sendJson(res, 200, { ok: true, ...result });
@@ -79,10 +71,12 @@ export function adminEmailsPlugin(stateDir: string): Plugin {
           }
 
           if (req.method === 'POST' && url === '/api/admin/emails/remove') {
-            const body = await readJsonBody(req) as { creatorEmail?: string; email?: string };
+            const session = await requireCreator(req, res, userStore, adminEmailsStore);
+            if (!session) return;
+            const body = await readJsonBody(req) as { email?: string };
             try {
               const result = adminEmailsStore.removeAdmin(
-                String(body.creatorEmail ?? '').trim(),
+                session.email,
                 String(body.email ?? '').trim(),
               );
               sendJson(res, 200, { ok: true, ...result });

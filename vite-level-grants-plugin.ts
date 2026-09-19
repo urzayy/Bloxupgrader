@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
+import { createUserStore } from './server/lib/userStore.mjs';
+import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
 
 const MAX_LEVEL = 90;
 
@@ -31,16 +34,6 @@ function readBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => voi
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s?: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-
 function storePath(grantsDir: string, email: string): string {
   return path.join(grantsDir, `${sanitizeEmail(email)}.json`);
 }
@@ -63,7 +56,31 @@ function saveStore(grantsDir: string, store: GrantStore) {
   fs.writeFileSync(storePath(grantsDir, store.email), JSON.stringify(store, null, 2), 'utf8');
 }
 
+async function requireSelfOrAdmin(
+  req: unknown,
+  res: unknown,
+  userStore: ReturnType<typeof createUserStore>,
+  adminEmailsStore: ReturnType<typeof createAdminEmailsStore>,
+  email: string,
+) {
+  const session = await requireBoundUser(req, res, userStore);
+  if (!session) return null;
+  const normalized = email.trim().toLowerCase();
+  if (session.email === normalized || adminEmailsStore.isAdminEmail(session.email)) {
+    return session;
+  }
+  sendJson(res, 403, { error: 'forbidden', message: 'Session mismatch.' });
+  return null;
+}
+
 export function levelGrantsPlugin(grantsDir: string): Plugin {
+  const root = path.dirname(grantsDir);
+  const adminEmailsStore = createAdminEmailsStore(path.resolve(root, 'site-state'));
+  const userStore = createUserStore({
+    userDbDir: path.resolve(root, 'user-db'),
+    adminEmailsStore,
+  });
+
   return {
     name: 'level-grants-api',
     configureServer(server) {
@@ -81,6 +98,8 @@ export function levelGrantsPlugin(grantsDir: string): Plugin {
               sendJson(res, 400, { error: 'email required' });
               return;
             }
+            const session = await requireSelfOrAdmin(req, res, userStore, adminEmailsStore, email);
+            if (!session) return;
             const store = loadStore(grantsDir, email);
             sendJson(res, 200, { grants: store.grants.filter(g => g.status === 'pending') });
             return;
@@ -93,6 +112,8 @@ export function levelGrantsPlugin(grantsDir: string): Plugin {
               sendJson(res, 400, { error: 'invalid ack' });
               return;
             }
+            const session = await requireSelfOrAdmin(req, res, userStore, adminEmailsStore, email);
+            if (!session) return;
             const store = loadStore(grantsDir, email);
             const ids = new Set(body.grantIds);
             store.grants = store.grants.map(g =>
@@ -104,17 +125,16 @@ export function levelGrantsPlugin(grantsDir: string): Plugin {
           }
 
           if (req.method === 'POST' && url === '/api/level-grants') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const body = JSON.parse(await readBody(req)) as {
               targetEmail: string;
-              grantedBy: string;
               level: number;
             };
             const targetEmail = body.targetEmail?.trim().toLowerCase();
-            const grantedBy = body.grantedBy?.trim().toLowerCase();
             const level = Math.floor(Number(body.level));
             if (
               !targetEmail
-              || !grantedBy
               || !Number.isFinite(level)
               || level < 1
               || level > MAX_LEVEL
@@ -127,7 +147,7 @@ export function levelGrantsPlugin(grantsDir: string): Plugin {
             const grant: LevelGrant = {
               id: `lvl_${now}_${Math.random().toString(36).slice(2, 8)}`,
               targetEmail,
-              grantedBy,
+              grantedBy: session.email,
               level,
               createdAt: now,
               status: 'pending',

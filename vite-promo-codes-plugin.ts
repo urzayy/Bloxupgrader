@@ -1,8 +1,11 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createPromoCodeStore } from './server/lib/promoCodeStore.mjs';
 import { initPromoCodeStore } from './server/lib/depositBonus.mjs';
 import { createUserStore } from './server/lib/userStore.mjs';
+import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { requireAdmin, sendJson } from './server/lib/httpAuth.mjs';
 
 function readBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -13,20 +16,12 @@ function readBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => voi
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s?: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-
 export function promoCodesPlugin(promoCodesDir: string, userDbDir: string): Plugin {
   const promoCodeStore = createPromoCodeStore(promoCodesDir);
   initPromoCodeStore(promoCodeStore);
-  const userStore = createUserStore({ userDbDir });
+  const siteStateDir = path.resolve(path.dirname(userDbDir), 'site-state');
+  const adminEmailsStore = createAdminEmailsStore(siteStateDir);
+  const userStore = createUserStore({ userDbDir, adminEmailsStore });
 
   return {
     name: 'promo-codes-api',
@@ -47,33 +42,27 @@ export function promoCodesPlugin(promoCodesDir: string, userDbDir: string): Plug
           }
 
           if (req.method === 'GET' && url.startsWith('/api/admin/promo-codes')) {
-            const adminEmail = new URL(url, 'http://local').searchParams.get('adminEmail') ?? '';
-            if (!userStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             sendJson(res, 200, { codes: promoCodeStore.listCodes() });
             return;
           }
 
           if (req.method === 'POST' && url === '/api/admin/promo-codes') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const body = JSON.parse(await readBody(req)) as {
-              adminEmail?: string;
               code?: string;
               percent?: number;
               durationValue?: number;
               durationUnit?: 'hours' | 'days' | 'permanent';
             };
-            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
             const result = promoCodeStore.createCode({
               code: String(body.code ?? ''),
               percent: Number(body.percent),
               durationValue: body.durationValue,
               durationUnit: body.durationUnit ?? 'permanent',
-              createdBy: String(body.adminEmail ?? '').trim(),
+              createdBy: session.email,
             });
             if (result.error) {
               sendJson(res, 400, { error: result.error });
@@ -85,11 +74,8 @@ export function promoCodesPlugin(promoCodesDir: string, userDbDir: string): Plug
 
           const deleteMatch = url.match(/^\/api\/admin\/promo-codes\/([^/?]+)/);
           if (req.method === 'DELETE' && deleteMatch) {
-            const adminEmail = new URL(url, 'http://local').searchParams.get('adminEmail') ?? '';
-            if (!userStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const code = decodeURIComponent(deleteMatch[1] ?? '');
             const result = promoCodeStore.deleteCode(code);
             if (result.error) {

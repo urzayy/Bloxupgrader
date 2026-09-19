@@ -30,6 +30,7 @@ import { recordGiveawayDepositFromTicket } from './server/lib/giveawayDepositHoo
 import { createCaseBattleStore } from './server/lib/caseBattleStore.mjs';
 import { createWithdrawChatStore } from './server/lib/withdrawChatStore.mjs';
 import { attachDurableDir, durableJsonEnabled } from './server/lib/durableJsonState.mjs';
+import { rateLimit, rateLimitPaths } from './server/lib/rateLimit.mjs';
 
 dotenv.config();
 
@@ -477,7 +478,7 @@ function saveLevelGrantStore(store) {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '256kb' }));
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -485,12 +486,50 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
   if (req.path.startsWith('/api/')) {
     res.setHeader('Cache-Control', 'no-store');
   }
   next();
 });
+
+// Auth abuse + admin action flood protection
+app.use(rateLimitPaths(
+  ['/api/auth/register', '/api/auth/session', '/api/auth/login'],
+  {
+    windowMs: 15 * 60_000,
+    max: 25,
+    key: (req, ip) => `auth:${ip}`,
+  },
+));
+app.use(rateLimitPaths(
+  [
+    '/api/admin/ban-user',
+    '/api/admin/unban-user',
+    '/api/admin/clear-account',
+    '/api/admin/announcement',
+    '/api/admin/reset-all-progress',
+    '/api/admin/reset-password',
+    '/api/admin/emails/add',
+    '/api/admin/emails/remove',
+    '/api/inventory-grants',
+    '/api/balance-grants',
+    '/api/level-grants',
+    '/api/withdraw/tickets',
+    '/api/player-state/sync',
+  ],
+  {
+    windowMs: 60_000,
+    max: 20,
+    key: (req, ip) => `admin:${ip}`,
+  },
+));
+app.use('/api/', rateLimit({
+  windowMs: 60_000,
+  max: 180,
+  key: (_req, ip) => `api:${ip}`,
+}));
 
 const BLOCKED_PATH_PREFIXES = [
   '/src',
@@ -679,15 +718,20 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/users/sync', async (req, res) => {
   try {
-    const { userId, email, nickname, isNewAccount } = req.body ?? {};
-    if (!userId || !email) {
+    const { email, nickname, isNewAccount } = req.body ?? {};
+    if (!email) {
       sendJson(res, 400, { error: 'bad request' });
       return;
     }
     const normalizedEmail = String(email).trim().toLowerCase();
-    const session = requireUserSession(req, res, { email: normalizedEmail });
+    const session = await requireBoundUserSession(req, res, { email: normalizedEmail });
     if (!session) return;
-    const user = await userStore.upsertUser({ userId: session.userId, email: normalizedEmail, nickname, isNewAccount });
+    const user = await userStore.upsertUser({
+      userId: session.userId,
+      email: normalizedEmail,
+      nickname,
+      isNewAccount,
+    });
     sendJson(res, 200, { ok: true, user });
   } catch (error) {
     console.error('[users/sync]', error);
@@ -697,13 +741,22 @@ app.post('/api/users/sync', async (req, res) => {
 
 app.post('/api/user-log', async (req, res) => {
   try {
-    const { userId, email, line, action, details } = req.body ?? {};
+    const { line, action, details } = req.body ?? {};
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
     if (!email || typeof line !== 'string') {
       sendJson(res, 400, { error: 'bad request' });
       return;
     }
-    appendUserTxtLog(email, line);
-    const event = await userStore.appendEvent({ userId, email, line, action, details });
+    const session = requireUserSession(req, res, { email });
+    if (!session) return;
+    appendUserTxtLog(email, String(line).slice(0, 2000));
+    const event = await userStore.appendEvent({
+      userId: session.userId,
+      email,
+      line: String(line).slice(0, 2000),
+      action,
+      details,
+    });
     sendJson(res, 200, { ok: true, eventId: event.id });
   } catch (error) {
     console.error('[user-log]', error);
@@ -713,24 +766,25 @@ app.post('/api/user-log', async (req, res) => {
 
 app.post('/api/player-state/sync', async (req, res) => {
   try {
-    const { userId, email, balance, inventory, resetAck } = req.body ?? {};
-    if (!userId || !email) {
+    const { balance, inventory, resetAck } = req.body ?? {};
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    if (!email) {
       sendJson(res, 400, { error: 'bad request' });
       return;
     }
-    const normalizedEmail = String(email).trim().toLowerCase();
-    const session = requireUserSession(req, res, { email: normalizedEmail });
+    const session = await requireBoundUserSession(req, res, { email });
     if (!session) return;
-    if (banStore.isBanned(normalizedEmail)) {
+    if (banStore.isBanned(email)) {
       sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
       return;
     }
-    const pendingResetAt = resetMarkerStore.getResetAt(normalizedEmail);
+    const userId = session.userId;
+    const pendingResetAt = resetMarkerStore.getResetAt(email);
 
     if (pendingResetAt && Number(resetAck) !== pendingResetAt) {
       const state = await playerStateStore.savePlayerState({
         userId,
-        email: normalizedEmail,
+        email,
         balance: 0,
         inventory: [],
       });
@@ -739,16 +793,16 @@ app.post('/api/player-state/sync', async (req, res) => {
     }
 
     if (pendingResetAt && Number(resetAck) === pendingResetAt) {
-      resetMarkerStore.clearReset(normalizedEmail, pendingResetAt);
+      resetMarkerStore.clearReset(email, pendingResetAt);
     }
 
     let nextBalance = Math.max(0, Math.floor(Number(balance) || 0));
     let nextInventory = Array.isArray(inventory) ? inventory.slice(0, 500) : [];
-    const existing = await playerStateStore.getPlayerStateByEmail(normalizedEmail);
-    const pendingGrants = loadBalanceGrantStore(normalizedEmail).grants
+    const existing = await playerStateStore.getPlayerStateByEmail(email);
+    const pendingGrants = loadBalanceGrantStore(email).grants
       .filter(grant => grant.status === 'pending')
       .reduce((sum, grant) => sum + Math.max(0, Math.floor(Number(grant.amount) || 0)), 0);
-    const pendingInventoryGrantValue = loadGrantStore(normalizedEmail).grants
+    const pendingInventoryGrantValue = loadGrantStore(email).grants
       .filter(grant => grant.status === 'pending')
       .reduce((sum, grant) => {
         const unit = Math.max(0, Math.floor(Number(grant?.skin?.price) || 0));
@@ -763,7 +817,7 @@ app.post('/api/player-state/sync', async (req, res) => {
     );
     nextBalance = clamped;
     if (blocked) {
-      console.warn(`[security] blocked balance inflate email=${normalizedEmail} from=${existingBalance} to=${Math.floor(Number(balance) || 0)}`);
+      console.warn(`[security] blocked balance inflate email=${email} from=${existingBalance} to=${Math.floor(Number(balance) || 0)}`);
     }
 
     const invClamp = clampSyncedInventory(
@@ -773,12 +827,12 @@ app.post('/api/player-state/sync', async (req, res) => {
     );
     nextInventory = invClamp.inventory;
     if (invClamp.blocked) {
-      console.warn(`[security] blocked inventory inflate email=${normalizedEmail}`);
+      console.warn(`[security] blocked inventory inflate email=${email}`);
     }
 
     const state = await playerStateStore.savePlayerState({
       userId,
-      email: normalizedEmail,
+      email,
       balance: nextBalance,
       inventory: nextInventory,
     });
@@ -798,6 +852,7 @@ app.get('/api/player-state/reset-pending', (req, res) => {
     sendJson(res, 400, { error: 'email required' });
     return;
   }
+  if (!requireUserSession(req, res, { email })) return;
   sendJson(res, 200, { resetAt: resetMarkerStore.getResetAt(email) });
 });
 
@@ -811,10 +866,15 @@ app.get('/api/profile-photo', (req, res) => {
 });
 
 app.post('/api/profile-photo', (req, res) => {
-  const { userId, email, dataUrl } = req.body ?? {};
-  const normalizedEmail = String(email ?? '').trim().toLowerCase();
-  if (!requireUserSession(req, res, { email: normalizedEmail })) return;
-  const result = profilePhotoStore.savePhoto({ userId, email, dataUrl });
+  const { dataUrl } = req.body ?? {};
+  const normalizedEmail = String(req.body?.email ?? '').trim().toLowerCase();
+  const session = requireUserSession(req, res, { email: normalizedEmail });
+  if (!session) return;
+  const result = profilePhotoStore.savePhoto({
+    userId: session.userId,
+    email: session.email,
+    dataUrl,
+  });
   if (!result.ok) {
     const message = result.error === 'too_large'
       ? 'Image is too large.'
@@ -837,22 +897,25 @@ app.get('/api/giveaways/winners', (req, res) => {
 });
 
 app.get('/api/giveaways/pending-win', (req, res) => {
+  const session = requireUserSession(req, res);
+  if (!session) return;
   const userId = String(req.query.userId ?? '').trim();
-  if (!userId) {
-    sendJson(res, 400, { error: 'userId required' });
+  if (userId && userId !== session.userId) {
+    sendJson(res, 403, { error: 'forbidden', message: 'Session mismatch.' });
     return;
   }
-  sendJson(res, 200, giveawayStore.listPendingWins(userId));
+  sendJson(res, 200, giveawayStore.listPendingWins(session.userId));
 });
 
 app.post('/api/giveaways/pending-win/ack', (req, res) => {
-  const userId = String(req.body?.userId ?? '').trim();
+  const session = requireUserSession(req, res);
+  if (!session) return;
   const pendingId = String(req.body?.pendingId ?? '').trim();
-  if (!userId || !pendingId) {
+  if (!pendingId) {
     sendJson(res, 400, { error: 'invalid_ack' });
     return;
   }
-  const result = giveawayStore.ackPendingWin(userId, pendingId);
+  const result = giveawayStore.ackPendingWin(session.userId, pendingId);
   if (result.error) {
     sendJson(res, 400, { error: result.error });
     return;
@@ -876,8 +939,15 @@ app.get('/api/giveaways/:period', (req, res) => {
 });
 
 app.post('/api/giveaways/join', (req, res) => {
-  const { period, userId, email, nickname, avatarId } = req.body ?? {};
-  const result = giveawayStore.joinGiveaway(period, { userId, email, nickname, avatarId });
+  const session = requireUserSession(req, res);
+  if (!session) return;
+  const { period, nickname, avatarId } = req.body ?? {};
+  const result = giveawayStore.joinGiveaway(period, {
+    userId: session.userId,
+    email: session.email,
+    nickname,
+    avatarId,
+  });
   if (result.error) {
     sendJson(res, 400, { error: result.error });
     return;
@@ -959,6 +1029,17 @@ app.put('/api/case-battles/:battleId', (req, res) => {
     sendJson(res, 400, { error: 'invalid_battle' });
     return;
   }
+  const isCreator = String(battle.createdByUserId || '').toLowerCase() === String(session.userId).toLowerCase();
+  const isParticipant = Array.isArray(battle.players)
+    && battle.players.some(p => !p?.isBot && String(p?.id || '').toLowerCase() === String(session.userId).toLowerCase());
+  const existing = caseBattleStore.get(req.params.battleId);
+  const wasParticipant = existing
+    && Array.isArray(existing.players)
+    && existing.players.some(p => !p?.isBot && String(p?.id || '').toLowerCase() === String(session.userId).toLowerCase());
+  if (!isCreator && !isParticipant && !wasParticipant && !adminEmailsStore.isAdminEmail(session.email)) {
+    sendJson(res, 403, { error: 'forbidden', message: 'Not a battle participant.' });
+    return;
+  }
   const result = caseBattleStore.upsert(battle);
   if (result.error) {
     sendJson(res, 400, { error: result.error });
@@ -976,9 +1057,12 @@ app.delete('/api/case-battles/:battleId', (req, res) => {
     return;
   }
   const isAdmin = adminEmailsStore.isAdminEmail(session.email);
-  const isHost = String(existing.hostUserId || '').toLowerCase() === String(session.userId || '').toLowerCase();
+  const isHost = String(existing.hostUserId || existing.createdByUserId || '').toLowerCase() === String(session.userId || '').toLowerCase();
   const isParticipant = Array.isArray(existing.players)
-    && existing.players.some(p => !p?.isBot && String(p?.userId || '').toLowerCase() === String(session.userId || '').toLowerCase());
+    && existing.players.some(p => !p?.isBot && (
+      String(p?.id || '').toLowerCase() === String(session.userId || '').toLowerCase()
+      || String(p?.userId || '').toLowerCase() === String(session.userId || '').toLowerCase()
+    ));
   if (!isAdmin && !isHost && !isParticipant) {
     sendJson(res, 403, { error: 'forbidden', message: 'Only host or participant can remove this battle.' });
     return;
@@ -1405,12 +1489,14 @@ app.post('/api/site-state/feed-event', async (req, res) => {
   }
 });
 
-app.get('/api/inventory-grants', (req, res) => {
+app.get('/api/inventory-grants', async (req, res) => {
   const email = req.query.email?.trim().toLowerCase();
   if (!email) {
     sendJson(res, 400, { error: 'email required' });
     return;
   }
+  const session = requireUserSession(req, res, { email });
+  if (!session) return;
   const store = loadGrantStore(email);
   sendJson(res, 200, { grants: store.grants.filter(g => g.status === 'pending') });
 });
@@ -1441,13 +1527,22 @@ app.post('/api/inventory-grants', async (req, res) => {
     return;
   }
   const quantity = Math.min(99, Math.max(1, Math.floor(req.body?.quantity ?? 1)));
+  const safeSkin = {
+    id: String(skin.id).slice(0, 128),
+    name: String(skin.name || 'Item').slice(0, 128),
+    weapon: String(skin.weapon || '').slice(0, 64),
+    rarity: String(skin.rarity || '').slice(0, 32),
+    wear: String(skin.wear || '').slice(0, 32),
+    price: Math.min(500_000, Math.max(0, Math.floor(Number(skin.price) || 0))),
+    image: String(skin.image || '').slice(0, 512),
+  };
   const store = loadGrantStore(targetEmail);
   const now = Date.now();
   const grants = Array.from({ length: quantity }, (_, index) => ({
     id: `grant_${now}_${index}_${Math.random().toString(36).slice(2, 8)}`,
     targetEmail,
     grantedBy,
-    skin,
+    skin: safeSkin,
     createdAt: now + index,
     status: 'pending',
   }));
@@ -1462,6 +1557,7 @@ app.get('/api/balance-grants', (req, res) => {
     sendJson(res, 400, { error: 'email required' });
     return;
   }
+  if (!requireUserSession(req, res, { email })) return;
   const store = loadBalanceGrantStore(email);
   sendJson(res, 200, { grants: store.grants.filter(g => g.status === 'pending') });
 });
@@ -1491,13 +1587,14 @@ app.post('/api/balance-grants', async (req, res) => {
     sendJson(res, 400, { error: 'invalid grant' });
     return;
   }
+  const safeAmount = Math.min(500_000, Math.max(1, Math.floor(amount)));
   const store = loadBalanceGrantStore(targetEmail);
   const now = Date.now();
   const grant = {
     id: `bal_${now}_${Math.random().toString(36).slice(2, 8)}`,
     targetEmail,
     grantedBy,
-    amount: Math.floor(amount),
+    amount: safeAmount,
     createdAt: now,
     status: 'pending',
   };
@@ -1514,6 +1611,7 @@ app.get('/api/level-grants', (req, res) => {
     sendJson(res, 400, { error: 'email required' });
     return;
   }
+  if (!requireUserSession(req, res, { email })) return;
   const store = loadLevelGrantStore(email);
   sendJson(res, 200, { grants: store.grants.filter(g => g.status === 'pending') });
 });
@@ -1574,7 +1672,13 @@ app.get('/api/withdraw/tickets', async (req, res) => {
       if (!adminSession) return;
       tickets = await withdrawChatStore.listTickets(all ? undefined : { openOnly: true });
     } else {
-      tickets = await withdrawChatStore.listTickets(userId ? { userId } : undefined);
+      const session = requireUserSession(req, res);
+      if (!session) return;
+      if (userId && String(userId) !== String(session.userId)) {
+        sendJson(res, 403, { error: 'forbidden', message: 'Session mismatch.' });
+        return;
+      }
+      tickets = await withdrawChatStore.listTickets({ userId: session.userId });
     }
     sendJson(res, 200, { tickets });
   } catch (error) {
@@ -1597,9 +1701,17 @@ app.post('/api/withdraw/admin-inbox', async (req, res) => {
 
 app.get('/api/withdraw/tickets/:ticketId', async (req, res) => {
   try {
+    const session = requireUserSession(req, res);
+    if (!session) return;
     const bundle = await withdrawChatStore.loadBundle(req.params.ticketId);
     if (!bundle) {
       sendJson(res, 404, { error: 'not found' });
+      return;
+    }
+    const isAdmin = adminEmailsStore.isAdminEmail(session.email);
+    const ownerId = String(bundle.ticket?.userId ?? '');
+    if (!isAdmin && ownerId && ownerId !== session.userId) {
+      sendJson(res, 403, { error: 'forbidden', message: 'Not your ticket.' });
       return;
     }
     sendJson(res, 200, bundle);
@@ -1705,14 +1817,14 @@ app.patch('/api/withdraw/tickets/:ticketId', async (req, res) => {
 });
 
 app.post('/api/withdraw/tickets', async (req, res) => {
+  const session = requireUserSession(req, res);
+  if (!session) return;
   const body = req.body ?? {};
-  if (!body.userId) {
-    sendJson(res, 400, { error: 'invalid ticket' });
-    return;
-  }
-
   const now = Date.now();
   const ticketType = body.type ?? 'withdraw';
+  const boundUserId = session.userId;
+  const boundEmail = session.email;
+  const boundLabel = String(body.userLabel || boundEmail.split('@')[0] || 'User').slice(0, 64);
 
   if (ticketType === 'deposit') {
     if (body.depositMethod === 'robux') {
@@ -1722,13 +1834,17 @@ app.post('/api/withdraw/tickets', async (req, res) => {
         sendJson(res, 400, { error: bonusResult.error });
         return;
       }
+      if (!Number.isFinite(robuxAmount) || robuxAmount < 1 || robuxAmount > 500_000) {
+        sendJson(res, 400, { error: 'invalid robux amount' });
+        return;
+      }
       const ticketId = `rb_${now}_${Math.random().toString(36).slice(2, 8)}`;
       const creditTotal = bonusResult.creditTotal;
       const ticket = {
         id: ticketId,
-        userId: body.userId,
-        userEmail: body.userEmail,
-        userLabel: body.userLabel || body.userEmail,
+        userId: boundUserId,
+        userEmail: boundEmail,
+        userLabel: boundLabel,
         type: 'deposit',
         skins: [],
         total: creditTotal,
@@ -1765,8 +1881,8 @@ app.post('/api/withdraw/tickets', async (req, res) => {
       return;
     }
 
-    const skins = body.skins ?? [];
-    const total = skins.reduce((sum, s) => sum + s.price, 0);
+    const skins = Array.isArray(body.skins) ? body.skins.slice(0, 100) : [];
+    const total = skins.reduce((sum, s) => sum + Math.max(0, Number(s?.price) || 0), 0);
     if (!skins.length || !Number.isFinite(total) || total < MIN_DEPOSIT_TOTAL) {
       sendJson(res, 400, { error: 'invalid deposit' });
       return;
@@ -1779,9 +1895,9 @@ app.post('/api/withdraw/tickets', async (req, res) => {
     const ticketId = `dp_${now}_${Math.random().toString(36).slice(2, 8)}`;
     const ticket = {
       id: ticketId,
-      userId: body.userId,
-      userEmail: body.userEmail,
-      userLabel: body.userLabel || body.userEmail,
+      userId: boundUserId,
+      userEmail: boundEmail,
+      userLabel: boundLabel,
       type: 'deposit',
       skins,
       total,
@@ -1830,9 +1946,9 @@ app.post('/api/withdraw/tickets', async (req, res) => {
     const ticketId = `hp_${now}_${Math.random().toString(36).slice(2, 8)}`;
     const ticket = {
       id: ticketId,
-      userId: body.userId,
-      userEmail: body.userEmail,
-      userLabel: body.userLabel || body.userEmail,
+      userId: boundUserId,
+      userEmail: boundEmail,
+      userLabel: boundLabel,
       type: 'help',
       skins: [],
       total: 0,
@@ -1858,30 +1974,31 @@ app.post('/api/withdraw/tickets', async (req, res) => {
     return;
   }
 
-  if (!body.skins?.length) {
+  if (!Array.isArray(body.skins) || !body.skins.length) {
     sendJson(res, 400, { error: 'invalid ticket' });
     return;
   }
 
+  const skins = body.skins.slice(0, 100);
   const ticketId = `wd_${now}_${Math.random().toString(36).slice(2, 8)}`;
-  const total = body.skins.reduce((sum, s) => sum + s.price, 0);
+  const total = skins.reduce((sum, s) => sum + Math.max(0, Number(s?.price) || 0), 0);
   if (total < MIN_WITHDRAW_TOTAL) {
     sendJson(res, 400, { error: `Minimum withdrawal is ${MIN_WITHDRAW_TOTAL} coins total.` });
     return;
   }
   const ticket = {
     id: ticketId,
-    userId: body.userId,
-    userEmail: body.userEmail,
-    userLabel: body.userLabel || body.userEmail,
+    userId: boundUserId,
+    userEmail: boundEmail,
+    userLabel: boundLabel,
     type: 'withdraw',
-    skins: body.skins,
+    skins,
     total,
     status: 'open',
     createdAt: now,
     updatedAt: now,
   };
-  const skinList = body.skins.map(s => `• ${s.name} (${s.price.toLocaleString('es-ES')})`).join('\n');
+  const skinList = skins.map(s => `• ${s.name} (${s.price.toLocaleString('es-ES')})`).join('\n');
   const bundle = {
     ticket,
     messages: [{
@@ -1891,7 +2008,7 @@ app.post('/api/withdraw/tickets', async (req, res) => {
       senderEmail: 'system@blox-upgrader',
       senderRole: 'system',
       senderLabel: 'System',
-      text: `Withdraw request received (${body.skins.length} skins · ${total.toLocaleString('es-ES')}).\n\n${skinList}\n\nAn administrator will assist you live. Please follow their instructions here.`,
+      text: `Withdraw request received (${skins.length} skins · ${total.toLocaleString('es-ES')}).\n\n${skinList}\n\nAn administrator will assist you live. Please follow their instructions here.`,
       createdAt: now,
     }],
   };

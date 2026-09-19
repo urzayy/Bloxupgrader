@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createCaseBattleStore } from './server/lib/caseBattleStore.mjs';
+import { createUserStore } from './server/lib/userStore.mjs';
+import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
 
 function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -17,18 +20,26 @@ function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) =>
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
+function isBattleParticipant(
+  battle: { players?: Array<{ isBot?: boolean; id?: string; userId?: string }> } | null | undefined,
+  userId: string,
+): boolean {
+  if (!Array.isArray(battle?.players)) return false;
+  const uid = String(userId).toLowerCase();
+  return battle.players.some(p => !p?.isBot && (
+    String(p?.id || '').toLowerCase() === uid
+    || String(p?.userId || '').toLowerCase() === uid
+  ));
 }
 
 export function caseBattlesPlugin(caseBattlesDir: string): Plugin {
   if (!fs.existsSync(caseBattlesDir)) fs.mkdirSync(caseBattlesDir, { recursive: true });
+  const siteStateDir = path.resolve(path.dirname(caseBattlesDir), 'site-state');
+  const adminEmailsStore = createAdminEmailsStore(siteStateDir);
+  const userStore = createUserStore({
+    userDbDir: path.resolve(path.dirname(caseBattlesDir), 'user-db'),
+    adminEmailsStore,
+  });
   const caseBattleStore = createCaseBattleStore(caseBattlesDir);
 
   return {
@@ -55,10 +66,19 @@ export function caseBattlesPlugin(caseBattlesDir: string): Plugin {
           }
 
           if (detailMatch && req.method === 'PUT') {
-            const body = await readJsonBody(req) as { battle?: { id?: string } };
+            const session = await requireBoundUser(req, res, userStore);
+            if (!session) return;
+            const body = await readJsonBody(req) as { battle?: { id?: string; createdByUserId?: string; players?: Array<{ isBot?: boolean; id?: string; userId?: string }> } };
             const battle = body.battle;
             if (!battle?.id || String(battle.id).toLowerCase() !== detailMatch[1].toLowerCase()) {
               sendJson(res, 400, { error: 'invalid_battle' });
+              return;
+            }
+            const isCreator = String(battle.createdByUserId || '').toLowerCase() === String(session.userId).toLowerCase();
+            const isParticipant = isBattleParticipant(battle, session.userId);
+            const isAdmin = adminEmailsStore.isAdminEmail(session.email);
+            if (!isCreator && !isParticipant && !isAdmin) {
+              sendJson(res, 403, { error: 'forbidden', message: 'Not a battle participant.' });
               return;
             }
             const result = caseBattleStore.upsert(battle);
@@ -71,6 +91,20 @@ export function caseBattlesPlugin(caseBattlesDir: string): Plugin {
           }
 
           if (detailMatch && req.method === 'DELETE') {
+            const session = await requireBoundUser(req, res, userStore);
+            if (!session) return;
+            const existing = caseBattleStore.getById(detailMatch[1]);
+            if (!existing) {
+              sendJson(res, 404, { error: 'not_found' });
+              return;
+            }
+            const isAdmin = adminEmailsStore.isAdminEmail(session.email);
+            const isHost = String(existing.hostUserId || existing.createdByUserId || '').toLowerCase() === String(session.userId).toLowerCase();
+            const isParticipant = isBattleParticipant(existing, session.userId);
+            if (!isAdmin && !isHost && !isParticipant) {
+              sendJson(res, 403, { error: 'forbidden', message: 'Only host or participant can remove this battle.' });
+              return;
+            }
             const result = caseBattleStore.remove(detailMatch[1]);
             if (result.error) {
               sendJson(res, 404, { error: result.error });

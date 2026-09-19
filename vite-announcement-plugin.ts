@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { Plugin } from 'vite';
 import { createAnnouncementStore } from './server/lib/announcementStore.mjs';
 import { createUserStore } from './server/lib/userStore.mjs';
+import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { requireAdmin, sendJson } from './server/lib/httpAuth.mjs';
 
 function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => void }): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -18,20 +20,12 @@ function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) =>
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-
 export function announcementPlugin(announcementsDir: string, userDbDir: string): Plugin {
   if (!fs.existsSync(announcementsDir)) fs.mkdirSync(announcementsDir, { recursive: true });
+  const siteStateDir = path.resolve(path.dirname(userDbDir), 'site-state');
+  const adminEmailsStore = createAdminEmailsStore(siteStateDir);
   const announcementStore = createAnnouncementStore(announcementsDir);
-  const userStore = createUserStore({ userDbDir });
+  const userStore = createUserStore({ userDbDir, adminEmailsStore });
 
   return {
     name: 'announcement-api',
@@ -46,30 +40,23 @@ export function announcementPlugin(announcementsDir: string, userDbDir: string):
           }
 
           if (url === '/api/admin/announcement' && req.method === 'GET') {
-            const query = new URL(req.url ?? '', 'http://localhost').searchParams;
-            const adminEmail = String(query.get('adminEmail') ?? '').trim();
-            if (!userStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             sendJson(res, 200, { announcement: announcementStore.getActive() });
             return;
           }
 
           if (url === '/api/admin/announcement' && req.method === 'POST') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const body = await readJsonBody(req) as {
-              adminEmail?: string;
               title?: string;
               message?: string;
             };
-            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
             const result = announcementStore.publish({
               title: body.title,
               message: body.message,
-              createdBy: body.adminEmail,
+              createdBy: session.email,
             });
             if (result.error) {
               sendJson(res, 400, { error: result.error });
@@ -80,11 +67,9 @@ export function announcementPlugin(announcementsDir: string, userDbDir: string):
           }
 
           if (url === '/api/admin/announcement/clear' && req.method === 'POST') {
-            const body = await readJsonBody(req) as { adminEmail?: string };
-            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
+            await readJsonBody(req);
             sendJson(res, 200, announcementStore.clear());
             return;
           }

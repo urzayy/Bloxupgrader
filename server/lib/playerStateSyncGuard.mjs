@@ -34,9 +34,9 @@ export function shouldSkipEmptyPlayerStateOverwrite(existing, balance, inventory
 /** Hard caps so DevTools / forged sync cannot invent coins. */
 export const MAX_BALANCE_HARD_CAP = 2_000_000;
 /** Per sync jump allowed without a pending admin grant (game wins stay modest). */
-export const MAX_BALANCE_SYNC_INCREASE = 25_000;
+export const MAX_BALANCE_SYNC_INCREASE = 15_000;
 /** Inventory total-value jump allowed without pending inventory grants. */
-export const MAX_INVENTORY_VALUE_SYNC_INCREASE = 50_000;
+export const MAX_INVENTORY_VALUE_SYNC_INCREASE = 30_000;
 
 /**
  * Clamp a client-reported balance so it cannot jump far above the last

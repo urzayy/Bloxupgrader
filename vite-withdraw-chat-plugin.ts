@@ -4,6 +4,9 @@ import type { Plugin } from 'vite';
 import { resolveDepositBonus, resolveRobuxDepositBonus } from './server/lib/depositBonus.mjs';
 import { createGiveawayStore } from './server/lib/giveawayStore.mjs';
 import { recordGiveawayDepositFromTicket } from './server/lib/giveawayDepositHook.mjs';
+import { createUserStore } from './server/lib/userStore.mjs';
+import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
+import { requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
 
 const MIN_DEPOSIT_TOTAL = 1000;
 const MIN_WITHDRAW_TOTAL = 20;
@@ -61,20 +64,16 @@ function readBody(req: { on: (event: string, cb: (chunk: Buffer) => void) => voi
   });
 }
 
-function sendJson(
-  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s?: string) => void },
-  status: number,
-  data: unknown,
-) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-
 export function withdrawChatPlugin(
   chatsDir: string,
   options?: { giveawaysDir?: string; grantsDir?: string },
 ): Plugin {
+  const root = path.dirname(chatsDir);
+  const adminEmailsStore = createAdminEmailsStore(path.resolve(root, 'site-state'));
+  const userStore = createUserStore({
+    userDbDir: path.resolve(root, 'user-db'),
+    adminEmailsStore,
+  });
   const giveawayStore = options?.giveawaysDir
     ? createGiveawayStore(options.giveawaysDir, options.grantsDir ?? null)
     : null;
@@ -152,6 +151,8 @@ export function withdrawChatPlugin(
 
         try {
           if (req.method === 'POST' && url === '/api/withdraw/admin-inbox') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const body = JSON.parse(await readBody(req)) as { lastReadByTicket?: Record<string, number> };
             sendJson(res, 200, { items: buildAdminInbox(body.lastReadByTicket ?? {}) });
             return;
@@ -159,13 +160,17 @@ export function withdrawChatPlugin(
 
           if (req.method === 'GET' && url.startsWith('/api/withdraw/tickets?')) {
             const query = new URL(url, 'http://local').searchParams;
-            const userId = query.get('userId');
             const admin = query.get('admin') === '1';
             const all = query.get('all') === '1';
-            const tickets = admin
-              ? listTickets(all ? undefined : { openOnly: true })
-              : listTickets(userId ? { userId } : undefined);
-            sendJson(res, 200, { tickets });
+            if (admin) {
+              const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+              if (!session) return;
+              sendJson(res, 200, { tickets: listTickets(all ? undefined : { openOnly: true }) });
+              return;
+            }
+            const session = await requireBoundUser(req, res, userStore);
+            if (!session) return;
+            sendJson(res, 200, { tickets: listTickets({ userId: session.userId }) });
             return;
           }
 
@@ -174,9 +179,17 @@ export function withdrawChatPlugin(
             const ticketId = decodeURIComponent(ticketMatch[1]);
 
             if (req.method === 'GET' && !ticketMatch[2]) {
+              const session = await requireBoundUser(req, res, userStore);
+              if (!session) return;
               const bundle = loadBundle(ticketId);
               if (!bundle) {
                 sendJson(res, 404, { error: 'not found' });
+                return;
+              }
+              const isAdmin = adminEmailsStore.isAdminEmail(session.email);
+              const ownerId = String(bundle.ticket.userId ?? '');
+              if (!isAdmin && ownerId && ownerId !== session.userId) {
+                sendJson(res, 403, { error: 'forbidden', message: 'Not your ticket.' });
                 return;
               }
               sendJson(res, 200, bundle);
@@ -190,24 +203,33 @@ export function withdrawChatPlugin(
                 return;
               }
               const body = JSON.parse(await readBody(req)) as {
-                senderId: string;
-                senderEmail: string;
-                senderRole: 'user' | 'admin';
-                senderLabel: string;
+                senderLabel?: string;
                 text: string;
               };
               if (!body.text?.trim()) {
                 sendJson(res, 400, { error: 'empty message' });
                 return;
               }
+              const session = await requireBoundUser(req, res, userStore);
+              if (!session) return;
+              const isAdmin = adminEmailsStore.isAdminEmail(session.email);
+              const ticketEmail = String(bundle.ticket.userEmail ?? '').trim().toLowerCase();
+              const ownsTicket = session.email === ticketEmail
+                || String(session.userId) === String(bundle.ticket.userId);
+              if (!isAdmin && !ownsTicket) {
+                sendJson(res, 403, { error: 'forbidden' });
+                return;
+              }
+              // Never trust client senderRole — derive from session only.
+              const senderRole: 'user' | 'admin' = isAdmin ? 'admin' : 'user';
               const now = Date.now();
               const message: ChatMessage = {
                 id: `msg_${now}_${Math.random().toString(36).slice(2, 7)}`,
                 ticketId,
-                senderId: body.senderId,
-                senderEmail: body.senderEmail,
-                senderRole: body.senderRole,
-                senderLabel: body.senderLabel || (body.senderRole === 'admin' ? 'Admin' : 'User'),
+                senderId: session.userId,
+                senderEmail: session.email,
+                senderRole,
+                senderLabel: body.senderLabel || (senderRole === 'admin' ? 'Admin' : 'User'),
                 text: body.text.trim(),
                 createdAt: now,
               };
@@ -219,6 +241,8 @@ export function withdrawChatPlugin(
             }
 
             if (req.method === 'PATCH' && !ticketMatch[2]) {
+              const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+              if (!session) return;
               const bundle = loadBundle(ticketId);
               if (!bundle) {
                 sendJson(res, 404, { error: 'not found' });
@@ -266,22 +290,22 @@ export function withdrawChatPlugin(
           }
 
           if (req.method === 'POST' && url === '/api/withdraw/tickets') {
+            const session = await requireBoundUser(req, res, userStore);
+            if (!session) return;
             const body = JSON.parse(await readBody(req)) as {
               type?: 'withdraw' | 'deposit' | 'help';
-              userId: string;
-              userEmail: string;
-              userLabel: string;
+              userLabel?: string;
               skins?: WithdrawSkinSummary[];
               amount?: number;
               total?: number;
               bonusCode?: string;
               bonusPercent?: number;
               robuxAmount?: number;
+              depositMethod?: string;
             };
-            if (!body.userId) {
-              sendJson(res, 400, { error: 'invalid ticket' });
-              return;
-            }
+            const boundUserId = session.userId;
+            const boundEmail = session.email;
+            const boundLabel = String(body.userLabel || boundEmail.split('@')[0] || 'User').slice(0, 64);
 
             const now = Date.now();
             const ticketType = body.type ?? 'withdraw';
@@ -298,9 +322,9 @@ export function withdrawChatPlugin(
                 const creditTotal = bonusResult.creditTotal;
                 const ticket: WithdrawTicket = {
                   id: ticketId,
-                  userId: body.userId,
-                  userEmail: body.userEmail,
-                  userLabel: body.userLabel || body.userEmail,
+                  userId: boundUserId,
+                  userEmail: boundEmail,
+                  userLabel: boundLabel,
                   type: 'deposit',
                   skins: [],
                   total: creditTotal,
@@ -349,9 +373,9 @@ export function withdrawChatPlugin(
               const ticketId = `dp_${now}_${Math.random().toString(36).slice(2, 8)}`;
               const ticket: WithdrawTicket = {
                 id: ticketId,
-                userId: body.userId,
-                userEmail: body.userEmail,
-                userLabel: body.userLabel || body.userEmail,
+                userId: boundUserId,
+                userEmail: boundEmail,
+                userLabel: boundLabel,
                 type: 'deposit',
                 skins,
                 total,
@@ -402,9 +426,9 @@ export function withdrawChatPlugin(
               const ticketId = `hp_${now}_${Math.random().toString(36).slice(2, 8)}`;
               const ticket: WithdrawTicket = {
                 id: ticketId,
-                userId: body.userId,
-                userEmail: body.userEmail,
-                userLabel: body.userLabel || body.userEmail,
+                userId: boundUserId,
+                userEmail: boundEmail,
+                userLabel: boundLabel,
                 type: 'help',
                 skins: [],
                 total: 0,
@@ -440,9 +464,9 @@ export function withdrawChatPlugin(
             }
             const ticket: WithdrawTicket = {
               id: ticketId,
-              userId: body.userId,
-              userEmail: body.userEmail,
-              userLabel: body.userLabel || body.userEmail,
+              userId: boundUserId,
+              userEmail: boundEmail,
+              userLabel: boundLabel,
               type: 'withdraw',
               skins: body.skins,
               total,

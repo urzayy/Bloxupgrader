@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 12; // 12h
 /** Bump to invalidate all previously issued (including forged) sessions. */
-const TOKEN_VERSION = 3;
+const TOKEN_VERSION = 4;
 
 let warnedWeakSecret = false;
 
@@ -98,6 +98,16 @@ export function readSessionTokenFromRequest(req) {
   }
   if (typeof req.query?.sessionToken === 'string' && req.query.sessionToken.trim()) {
     return req.query.sessionToken.trim();
+  }
+  // Vite/Connect middlewares do not populate req.query — parse from URL.
+  try {
+    const rawUrl = typeof req.url === 'string' ? req.url : '';
+    if (rawUrl.includes('sessionToken=')) {
+      const token = new URL(rawUrl, 'http://local').searchParams.get('sessionToken');
+      if (token?.trim()) return token.trim();
+    }
+  } catch {
+    /* ignore */
   }
   return '';
 }

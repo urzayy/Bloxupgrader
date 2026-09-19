@@ -9,7 +9,8 @@ import { clearAccountByEmail as resetAccountByEmail } from './server/lib/account
 import { createAccountResetMarkerStore } from './server/lib/accountResetMarker.mjs';
 import { createAccountBanStore } from './server/lib/accountBanStore.mjs';
 import { createProfilePhotoStore } from './server/lib/profilePhotoStore.mjs';
-import { shouldSkipEmptyPlayerStateOverwrite, clampSyncedBalance, normalizeInventory } from './server/lib/playerStateSyncGuard.mjs';
+import { shouldSkipEmptyPlayerStateOverwrite, clampSyncedBalance, clampSyncedInventory, normalizeInventory } from './server/lib/playerStateSyncGuard.mjs';
+import { createSessionToken, requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
 
 dotenv.config();
 
@@ -25,12 +26,6 @@ function readJsonBody(req: { on: (event: string, cb: (chunk: Buffer) => void) =>
       }
     });
   });
-}
-
-function sendJson(res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (s: string) => void }, status: number, data: unknown) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
 }
 
 export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
@@ -85,16 +80,20 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               return;
             }
             if (adminEmailsStore.isAdminEmail(normalizedEmail)) {
+              // Refuse admin emails on register — no sessionToken.
               sendJson(res, 409, { ok: false, error: 'email_exists', message: 'Esta cuenta ya existe. Inicia sesión.' });
               return;
             }
             const result = await userStore.registerAccount({ ...body, isNewAccount: true });
             if (result?.conflict) {
+              // Conflict without sessionToken — forces real login.
               sendJson(res, 409, { ok: false, error: 'email_exists', message: 'Esta cuenta ya existe. Inicia sesión.' });
               return;
             }
             if (result?.line && typeof body.email === 'string') appendTxtLog(body.email, result.line);
-            sendJson(res, 200, { ok: true, user: result?.user ?? null });
+            const userId = String(result?.user?.id ?? result?.user?.userId ?? body.userId);
+            const sessionToken = createSessionToken({ userId, email: normalizedEmail });
+            sendJson(res, 200, { ok: true, user: result?.user ?? null, sessionToken });
             return;
           }
 
@@ -119,6 +118,7 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               return;
             }
             const playerState = await playerStateStore.getPlayerStateByEmail(normalizedEmail);
+            const sessionToken = createSessionToken({ userId: auth.userId, email: auth.email });
             sendJson(res, 200, {
               ok: true,
               user: {
@@ -128,50 +128,63 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
                 salt: auth.salt,
               },
               playerState,
+              sessionToken,
             });
             return;
           }
 
           if (url === '/api/auth/login' && req.method === 'POST') {
             const body = await readJsonBody(req) as { userId?: string; email?: string; nickname?: string };
-            if (!body.userId || !body.email) {
+            if (!body.email) {
               sendJson(res, 400, { error: 'bad request' });
               return;
             }
             const normalizedEmail = String(body.email).trim().toLowerCase();
+            const session = await requireBoundUser(req, res, userStore, { email: normalizedEmail });
+            if (!session) return;
             if (banStore.isBanned(normalizedEmail)) {
               sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
               return;
             }
-            const result = await userStore.touchAccountLogin(body);
-            if (result?.line) appendTxtLog(body.email, result.line);
+            const result = await userStore.touchAccountLogin({
+              userId: session.userId,
+              email: normalizedEmail,
+              nickname: body.nickname,
+            });
+            if (result?.line) appendTxtLog(normalizedEmail, result.line);
             sendJson(res, 200, {
               ok: true,
               user: result?.user ?? null,
-              canonicalUserId: result?.canonicalUserId ?? body.userId,
+              canonicalUserId: result?.canonicalUserId ?? session.userId,
             });
             return;
           }
 
           if (url === '/api/users/sync' && req.method === 'POST') {
             const body = await readJsonBody(req) as {
-              userId?: string;
               email?: string;
               nickname?: string;
               isNewAccount?: boolean;
             };
-            if (!body.userId || !body.email) {
+            if (!body.email) {
               sendJson(res, 400, { error: 'bad request' });
               return;
             }
-            const user = await userStore.upsertUser(body);
+            const normalizedEmail = String(body.email).trim().toLowerCase();
+            const session = await requireBoundUser(req, res, userStore, { email: normalizedEmail });
+            if (!session) return;
+            const user = await userStore.upsertUser({
+              userId: session.userId,
+              email: normalizedEmail,
+              nickname: body.nickname,
+              isNewAccount: body.isNewAccount,
+            });
             sendJson(res, 200, { ok: true, user });
             return;
           }
 
           if (url === '/api/user-log' && req.method === 'POST') {
             const body = await readJsonBody(req) as {
-              userId?: string;
               email?: string;
               line?: string;
               action?: string;
@@ -181,34 +194,45 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               sendJson(res, 400, { error: 'bad request' });
               return;
             }
-            appendTxtLog(body.email, body.line);
-            const event = await userStore.appendEvent(body);
+            const normalizedEmail = String(body.email).trim().toLowerCase();
+            const session = await requireBoundUser(req, res, userStore, { email: normalizedEmail });
+            if (!session) return;
+            appendTxtLog(normalizedEmail, body.line);
+            const event = await userStore.appendEvent({
+              userId: session.userId,
+              email: normalizedEmail,
+              line: body.line,
+              action: body.action,
+              details: body.details,
+            });
             sendJson(res, 200, { ok: true, eventId: event.id });
             return;
           }
 
           if (url === '/api/player-state/sync' && req.method === 'POST') {
             const body = await readJsonBody(req) as {
-              userId?: string;
               email?: string;
               balance?: number;
               inventory?: unknown;
               resetAck?: number;
             };
-            if (!body.userId || !body.email) {
+            if (!body.email) {
               sendJson(res, 400, { error: 'bad request' });
               return;
             }
             const normalizedEmail = String(body.email).trim().toLowerCase();
+            const session = await requireBoundUser(req, res, userStore, { email: normalizedEmail });
+            if (!session) return;
             if (banStore.isBanned(normalizedEmail)) {
               sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
               return;
             }
+            const userId = session.userId;
             const pendingResetAt = resetMarkerStore.getResetAt(normalizedEmail);
 
             if (pendingResetAt && Number(body.resetAck) !== pendingResetAt) {
               const state = await playerStateStore.savePlayerState({
-                userId: body.userId,
+                userId,
                 email: normalizedEmail,
                 balance: 0,
                 inventory: [],
@@ -240,6 +264,23 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               pendingGrants = 0;
             }
 
+            let pendingInventoryGrantValue = 0;
+            try {
+              const invGrantFile = path.join(grantsDir, `${normalizedEmail.replace(/@/g, '_at_').replace(/[^a-zA-Z0-9._-]/g, '_')}.json`);
+              if (fs.existsSync(invGrantFile)) {
+                const parsed = JSON.parse(fs.readFileSync(invGrantFile, 'utf8'));
+                pendingInventoryGrantValue = (parsed?.grants ?? [])
+                  .filter((grant: { status?: string }) => grant.status === 'pending')
+                  .reduce((sum: number, grant: { skin?: { price?: number }; quantity?: number }) => {
+                    const unit = Math.max(0, Math.floor(Number(grant?.skin?.price) || 0));
+                    const qty = Math.max(1, Math.floor(Number(grant?.quantity) || 1));
+                    return sum + unit * qty;
+                  }, 0);
+              }
+            } catch {
+              pendingInventoryGrantValue = 0;
+            }
+
             const { nextBalance, blocked } = clampSyncedBalance(
               existing?.balance,
               body.balance,
@@ -249,11 +290,20 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               console.warn(`[security] blocked balance inflate email=${normalizedEmail}`);
             }
 
+            const invClamp = clampSyncedInventory(
+              existing?.inventory,
+              body.inventory,
+              pendingInventoryGrantValue,
+            );
+            if (invClamp.blocked) {
+              console.warn(`[security] blocked inventory inflate email=${normalizedEmail}`);
+            }
+
             const state = await playerStateStore.savePlayerState({
-              userId: body.userId,
+              userId,
               email: normalizedEmail,
               balance: nextBalance,
-              inventory: normalizeInventory(body.inventory),
+              inventory: invClamp.inventory,
             });
             sendJson(res, 200, { ok: true, state });
             return;
@@ -265,6 +315,8 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               sendJson(res, 400, { error: 'email required' });
               return;
             }
+            const session = await requireBoundUser(req, res, userStore, { email });
+            if (!session) return;
             const state = await playerStateStore.getPlayerStateByEmail(email);
             sendJson(res, 200, { state });
             return;
@@ -276,6 +328,8 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
               sendJson(res, 400, { error: 'email required' });
               return;
             }
+            const session = await requireBoundUser(req, res, userStore, { email });
+            if (!session) return;
             sendJson(res, 200, { resetAt: resetMarkerStore.getResetAt(email) });
             return;
           }
@@ -315,11 +369,21 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
 
           if (url === '/api/profile-photo' && req.method === 'POST') {
             const body = await readJsonBody(req) as {
-              userId?: string;
               email?: string;
               dataUrl?: string;
             };
-            const result = profilePhotoStore.savePhoto(body);
+            const normalizedEmail = String(body.email ?? '').trim().toLowerCase();
+            if (!normalizedEmail) {
+              sendJson(res, 400, { error: 'email required' });
+              return;
+            }
+            const session = await requireBoundUser(req, res, userStore, { email: normalizedEmail });
+            if (!session) return;
+            const result = profilePhotoStore.savePhoto({
+              userId: session.userId,
+              email: session.email,
+              dataUrl: body.dataUrl,
+            });
             if (!result.ok) {
               const message = result.error === 'too_large'
                 ? 'La imagen es demasiado grande.'
@@ -334,28 +398,25 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
           }
 
           if (url === '/api/admin/ban-user' && req.method === 'POST') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const body = await readJsonBody(req) as {
-              adminEmail?: string;
               email?: string;
               days?: number | null;
               reason?: string | null;
             };
-            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
             const targetEmail = String(body.email ?? '').trim().toLowerCase();
             if (!targetEmail) {
               sendJson(res, 400, { error: 'email required' });
               return;
             }
-            if (userStore.isAdminEmail(targetEmail)) {
+            if (adminEmailsStore.isAdminEmail(targetEmail)) {
               sendJson(res, 400, { error: 'Cannot ban admin accounts' });
               return;
             }
             const days = body.days == null ? null : Number(body.days);
             const ban = banStore.banUser(targetEmail, {
-              bannedBy: String(body.adminEmail).trim().toLowerCase(),
+              bannedBy: session.email,
               days,
               reason: body.reason,
             });
@@ -364,11 +425,9 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
           }
 
           if (url === '/api/admin/unban-user' && req.method === 'POST') {
-            const body = await readJsonBody(req) as { adminEmail?: string; email?: string };
-            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
+            const body = await readJsonBody(req) as { email?: string };
             const targetEmail = String(body.email ?? '').trim().toLowerCase();
             if (!targetEmail) {
               sendJson(res, 400, { error: 'email required' });
@@ -380,24 +439,18 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
           }
 
           if (url === '/api/admin/bans' && req.method === 'GET') {
-            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
-            if (!userStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             banStore.purgeExpired();
             sendJson(res, 200, { bans: banStore.listActiveBans() });
             return;
           }
 
           if (url === '/api/admin/player-state' && req.method === 'GET') {
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const params = new URL(req.url ?? '', 'http://local').searchParams;
-            const adminEmail = params.get('adminEmail') ?? '';
             const email = params.get('email') ?? '';
-            if (!playerStateStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
             if (!email) {
               sendJson(res, 400, { error: 'email required' });
               return;
@@ -412,11 +465,9 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
           }
 
           if (url === '/api/admin/clear-account' && req.method === 'POST') {
-            const body = await readJsonBody(req) as { adminEmail?: string; email?: string };
-            if (!userStore.isAdminEmail(String(body.adminEmail ?? '').trim())) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
+            const body = await readJsonBody(req) as { email?: string };
             if (!body.email) {
               sendJson(res, 400, { error: 'email required' });
               return;
@@ -435,11 +486,8 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
           }
 
           if (url === '/api/admin/user-db/status' && req.method === 'GET') {
-            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
-            if (!userStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const storage = await userStore.checkConnection();
             const users = await userStore.listUsers();
             const emails = await userStore.listRegisteredEmails();
@@ -461,22 +509,16 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
           }
 
           if (url === '/api/admin/user-db/users' && req.method === 'GET') {
-            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
-            if (!userStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             sendJson(res, 200, { users: await userStore.listUsers() });
             return;
           }
 
           const userMatch = url.match(/^\/api\/admin\/user-db\/users\/([^/]+)$/);
           if (userMatch && req.method === 'GET') {
-            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
-            if (!userStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const userId = decodeURIComponent(userMatch[1]);
             const user = await userStore.getUser(userId);
             if (!user) {
@@ -489,11 +531,8 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
 
           const exportMatch = url.match(/^\/api\/admin\/user-db\/users\/([^/]+)\/export\.txt$/);
           if (exportMatch && req.method === 'GET') {
-            const adminEmail = new URL(req.url ?? '', 'http://local').searchParams.get('adminEmail') ?? '';
-            if (!userStore.isAdminEmail(adminEmail)) {
-              sendJson(res, 403, { error: 'forbidden' });
-              return;
-            }
+            const session = await requireAdmin(req, res, userStore, adminEmailsStore);
+            if (!session) return;
             const userId = decodeURIComponent(exportMatch[1]);
             if (!(await userStore.getUser(userId))) {
               sendJson(res, 404, { error: 'not found' });
