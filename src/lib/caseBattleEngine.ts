@@ -102,14 +102,13 @@ function tickBattles(): void {
   const battles = loadLiveBattles();
 
   for (const battle of battles) {
-    if (battle.status === 'finished') {
+    if (battle.status === 'finished' || battle.currentRound >= battle.caseSlugs.length) {
       if (userId && isBattleParticipant(battle, userId)) {
         const fresh = getCaseBattleById(battle.id) ?? battle;
         trySettleBattleEconomy(fresh, userId);
       }
-      if (userId && battle.createdByUserId === userId) {
-        scheduleFinishedBattleRemoval(battle);
-      }
+      // Anyone who sees a finished battle should clear it from the lobby.
+      scheduleFinishedBattleRemoval(battle);
       continue;
     }
 

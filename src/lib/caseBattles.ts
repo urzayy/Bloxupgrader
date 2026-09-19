@@ -113,14 +113,16 @@ export const BATTLE_MODE_META: Record<
 const PLAYER_COLORS = ['#f97316', '#22d3ee', '#a855f7', '#eab308', '#ef4444', '#14b8a6'];
 
 export function isLiveCaseBattle(battle: CaseBattle): boolean {
-  return (
-    Boolean(battle.createdByUserId) &&
-    battle.players.length > 0 &&
-    battle.players.every(player => Boolean(player.id)) &&
-    battle.status !== 'finished' &&
-    battle.currentRound < battle.caseSlugs.length &&
-    (battle.status === 'waiting' || battle.status === 'in_progress')
-  );
+  if (!battle?.createdByUserId) return false;
+  if (!Array.isArray(battle.players) || battle.players.length === 0) return false;
+  if (!battle.players.every(player => Boolean(player.id))) return false;
+  if (!Array.isArray(battle.caseSlugs) || battle.caseSlugs.length === 0) return false;
+  if (battle.status === 'finished') return false;
+  if (battle.currentRound >= battle.caseSlugs.length) return false;
+  // Treat fully-opened rounds as done even if status lagged behind.
+  const maxDrops = Math.max(0, ...battle.players.map(player => player.drops?.length ?? 0));
+  if (maxDrops >= battle.caseSlugs.length) return false;
+  return battle.status === 'waiting' || battle.status === 'in_progress';
 }
 
 export function getLiveCaseBattles(): CaseBattle[] {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const BATTLE_FINISH_GRACE_MS = 5000;
+const BATTLE_FINISH_GRACE_MS = 1500;
 
 function battleCreatedAt(id) {
   const match = String(id).match(/^battle-(\d+)-/);
@@ -89,24 +89,14 @@ function preferAdvancedBattle(local, incoming) {
   };
 }
 
-function areAllHumansSettled(battle) {
-  const humans = (battle.players ?? []).filter(player => !player.isBot).map(player => player.id);
-  if (humans.length === 0) return true;
-  const settled = new Set(battle.settledUserIds ?? []);
-  return humans.every(id => settled.has(id));
-}
-
 function shouldPersistBattle(battle) {
   if (!battle?.id || !battle.createdByUserId) return false;
   if (!Array.isArray(battle.players) || battle.players.length === 0) return false;
   if (!Array.isArray(battle.caseSlugs) || battle.caseSlugs.length === 0) return false;
 
   if (battle.status === 'finished' || isBattleFinished(battle)) {
-    const finishedAt = battle.finishedAt ?? battleCreatedAt(battle.id);
-    if (finishedAt && Date.now() - finishedAt < BATTLE_FINISH_GRACE_MS) {
-      return true;
-    }
-    return !areAllHumansSettled(battle);
+    const finishedAt = battle.finishedAt ?? battleCreatedAt(battle.id) ?? Date.now();
+    return Date.now() - finishedAt < BATTLE_FINISH_GRACE_MS;
   }
 
   const createdAt = battleCreatedAt(battle.id);
@@ -123,15 +113,15 @@ function shouldPersistBattle(battle) {
 }
 
 function isLiveCaseBattle(battle) {
-  return (
-    Boolean(battle?.createdByUserId)
-    && Array.isArray(battle.players)
-    && battle.players.length > 0
-    && battle.players.every(player => Boolean(player?.id))
-    && battle.status !== 'finished'
-    && battle.currentRound < battle.caseSlugs.length
-    && (battle.status === 'waiting' || battle.status === 'in_progress')
-  );
+  if (!battle?.createdByUserId) return false;
+  if (!Array.isArray(battle.players) || battle.players.length === 0) return false;
+  if (!battle.players.every(player => Boolean(player?.id))) return false;
+  if (!Array.isArray(battle.caseSlugs) || battle.caseSlugs.length === 0) return false;
+  if (battle.status === 'finished') return false;
+  if (battle.currentRound >= battle.caseSlugs.length) return false;
+  const maxDrops = Math.max(0, ...battle.players.map(player => player.drops?.length ?? 0));
+  if (maxDrops >= battle.caseSlugs.length) return false;
+  return battle.status === 'waiting' || battle.status === 'in_progress';
 }
 
 export function createCaseBattleStore(rootDir) {

@@ -51,25 +51,16 @@ function battleCreatedAt(id: string): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-export const BATTLE_FINISH_GRACE_MS = 5000;
-
-function areAllHumansSettled(battle: CaseBattle): boolean {
-  const humans = battle.players.filter(player => !player.isBot).map(player => player.id);
-  if (humans.length === 0) return true;
-  const settled = new Set(battle.settledUserIds ?? []);
-  return humans.every(id => settled.has(id));
-}
+export const BATTLE_FINISH_GRACE_MS = 1500;
 
 function shouldPersistBattle(battle: CaseBattle): boolean {
   if (!battle?.id || !battle.createdByUserId) return false;
   if (!Array.isArray(battle.players) || battle.players.length === 0) return false;
   if (!Array.isArray(battle.caseSlugs) || battle.caseSlugs.length === 0) return false;
   if (battle.status === 'finished' || isBattleFinished(battle)) {
-    const finishedAt = battle.finishedAt ?? battleCreatedAt(battle.id);
-    if (finishedAt && Date.now() - finishedAt < BATTLE_FINISH_GRACE_MS) {
-      return true;
-    }
-    return !areAllHumansSettled(battle);
+    const finishedAt = battle.finishedAt ?? battleCreatedAt(battle.id) ?? Date.now();
+    // Brief window only so economy can settle — never keep finished battles in the lobby.
+    return Date.now() - finishedAt < BATTLE_FINISH_GRACE_MS;
   }
 
   const createdAt = battleCreatedAt(battle.id);
@@ -138,8 +129,15 @@ export async function refreshBattlesFromServer(): Promise<CaseBattle[]> {
   const remote = await fetchLiveBattlesFromServer();
   if (remote) {
     const local = serverBattleCache ?? loadLocalBattlesOnly();
-    // Keep finished/local-advanced battles; listLive() omits finished ones.
-    const merged = mergeBattleLists(local, remote);
+    const remoteIds = new Set(remote.map(battle => battle.id.toLowerCase()));
+    // Lobby is server-authoritative. Keep only brand-new local waiting battles
+    // that have not landed on the server yet — drop stale in_progress/finished.
+    const localOnlyWaiting = local.filter(battle => {
+      if (!battle?.id) return false;
+      if (remoteIds.has(battle.id.toLowerCase())) return false;
+      return battle.status === 'waiting';
+    });
+    const merged = mergeBattleLists(localOnlyWaiting, remote);
     writeLocalBattles(merged);
     notifyBattlesUpdated();
     return merged;
