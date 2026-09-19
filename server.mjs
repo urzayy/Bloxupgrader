@@ -528,6 +528,19 @@ app.use(rateLimitPaths(
     key: (req, ip) => `admin:${ip}`,
   },
 ));
+app.use(rateLimitPaths(
+  [
+    '/api/giveaways/join',
+    '/api/giveaways/deposit-record',
+    '/api/case-battles',
+    '/api/site-state/feed-event',
+  ],
+  {
+    windowMs: 60_000,
+    max: 40,
+    key: (req, ip) => `game:${ip}`,
+  },
+));
 app.use('/api/', rateLimit({
   windowMs: 60_000,
   max: 180,
@@ -548,6 +561,14 @@ const BLOCKED_PATH_PREFIXES = [
   '/level-grants',
   '/inventory-grants',
   '/site-state',
+  '/account-resets',
+  '/account-bans',
+  '/case-battles',
+  '/giveaways',
+  '/promo-codes',
+  '/announcements',
+  '/profile-photos',
+  '/user-logs',
   '/backup',
 ];
 
