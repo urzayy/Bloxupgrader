@@ -4,7 +4,11 @@ import path from 'node:path';
 export const CREATOR_EMAIL = 'urzay1v1@gmail.com';
 
 /** Only these accounts can ever be admins unless ALLOW_DYNAMIC_ADMINS=1. */
-export const DEFAULT_ADMINS = [CREATOR_EMAIL, 'ecruzcastillo2009@gmail.com'];
+export const DEFAULT_ADMINS = [
+  CREATOR_EMAIL,
+  'ecruzcastillo2009@gmail.com',
+  'dwozadmin@gmail.com',
+];
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();

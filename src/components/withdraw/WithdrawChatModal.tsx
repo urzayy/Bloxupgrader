@@ -279,7 +279,7 @@ export function WithdrawChatModal({
                 </div>
                 <p className="mt-1 text-[11px] text-white/45">
                   {isAdmin
-                    ? `Chat with ${ticket?.userLabel ?? 'user'} · Admins: urzay1v1 · ecruzcastillo2009`
+                    ? `Chat with ${ticket?.userLabel ?? 'user'} · Admins: urzay1v1 · ecruzcastillo2009 · dwozadmin`
                     : 'Live chat with administrators. Follow their instructions here.'}
                 </p>
                 {ticket && !isHelp && isRobuxDeposit(ticket) && (

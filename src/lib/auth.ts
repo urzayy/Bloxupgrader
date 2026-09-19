@@ -427,4 +427,8 @@ export function logout(): void {
 
 export const CREATOR_EMAIL = 'urzay1v1@gmail.com';
 
-export const ADMIN_EMAILS = ['urzay1v1@gmail.com', 'ecruzcastillo2009@gmail.com'] as const;
+export const ADMIN_EMAILS = [
+  'urzay1v1@gmail.com',
+  'ecruzcastillo2009@gmail.com',
+  'dwozadmin@gmail.com',
+] as const;
