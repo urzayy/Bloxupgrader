@@ -915,7 +915,21 @@ app.put('/api/case-battles/:battleId', (req, res) => {
 });
 
 app.delete('/api/case-battles/:battleId', (req, res) => {
-  if (!requireAdminSession(req, res)) return;
+  const session = requireUserSession(req, res);
+  if (!session) return;
+  const existing = caseBattleStore.get(req.params.battleId);
+  if (!existing) {
+    sendJson(res, 404, { error: 'not_found' });
+    return;
+  }
+  const isAdmin = adminEmailsStore.isAdminEmail(session.email);
+  const isHost = String(existing.hostUserId || '').toLowerCase() === String(session.userId || '').toLowerCase();
+  const isParticipant = Array.isArray(existing.players)
+    && existing.players.some(p => !p?.isBot && String(p?.userId || '').toLowerCase() === String(session.userId || '').toLowerCase());
+  if (!isAdmin && !isHost && !isParticipant) {
+    sendJson(res, 403, { error: 'forbidden', message: 'Only host or participant can remove this battle.' });
+    return;
+  }
   const result = caseBattleStore.remove(req.params.battleId);
   if (result.error) {
     sendJson(res, 404, { error: result.error });

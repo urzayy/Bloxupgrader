@@ -1,4 +1,5 @@
 import type { CaseBattle } from './caseBattles';
+import { sessionAuthHeaders } from './sessionToken';
 
 export async function fetchLiveBattlesFromServer(): Promise<CaseBattle[] | null> {
   try {
@@ -26,7 +27,7 @@ export async function upsertCaseBattleOnServer(battle: CaseBattle): Promise<bool
   try {
     const res = await fetch(`/api/case-battles/${encodeURIComponent(battle.id)}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ battle }),
     });
     return res.ok;
@@ -39,6 +40,7 @@ export async function removeCaseBattleOnServer(battleId: string): Promise<boolea
   try {
     const res = await fetch(`/api/case-battles/${encodeURIComponent(battleId)}`, {
       method: 'DELETE',
+      headers: sessionAuthHeaders(),
     });
     return res.ok;
   } catch {
