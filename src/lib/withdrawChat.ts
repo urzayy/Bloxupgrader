@@ -4,7 +4,7 @@ import { getDisplayName } from './auth';
 import { formatUSD } from './wheelMath';
 import { getAdminLastReadMap } from './adminChatRead';
 import { calcRobuxDepositCredit } from './robuxDeposit';
-import { sessionAuthHeaders } from './sessionToken';
+import { clearSessionToken, sessionAuthHeaders, withSessionToken } from './sessionToken';
 
 export type SupportTicketType = 'withdraw' | 'deposit' | 'help';
 export type WithdrawTicketStatus = 'open' | 'completed' | 'cancelled';
@@ -127,9 +127,25 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    if (res.status === 401) {
+      clearSessionToken();
+      throw new Error('Sign in again to continue.');
+    }
+    if (res.status === 429) {
+      throw new Error('Too many requests. Wait a moment and try again.');
+    }
     if (res.status === 404) {
       const ticketMatch = path.match(/\/api\/withdraw\/tickets\/([^/?]+)/);
       throw new WithdrawTicketNotFoundError(ticketMatch?.[1] ?? 'unknown');
+    }
+    try {
+      const parsed = JSON.parse(text) as { message?: string; error?: string };
+      if (parsed.message) throw new Error(parsed.message);
+      if (parsed.error === 'invalid deposit') {
+        throw new Error('Deposit does not meet the minimum. Add more skins and try again.');
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message !== text) throw error;
     }
     throw new Error(text || `Request failed (${res.status})`);
   }
@@ -143,13 +159,13 @@ export async function createWithdrawTicket(
 ): Promise<WithdrawTicketBundle> {
   return api<WithdrawTicketBundle>('/api/withdraw/tickets', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       type: 'withdraw',
       userId: session.userId,
       userEmail: session.email,
       userLabel,
       skins: skins.map(summarizeSkin),
-    }),
+    })),
   });
 }
 
@@ -159,17 +175,15 @@ export async function createDepositTicket(
   items: { skin: Skin; quantity: number }[],
   bonus?: { code: string; percent: number },
 ): Promise<WithdrawTicketBundle> {
-  const skins: WithdrawSkinSummary[] = [];
-  for (const item of items) {
-    for (let i = 0; i < item.quantity; i++) {
-      skins.push(summarizeSkin(item.skin));
-    }
-  }
+  const skins = items.map(item => ({
+    ...summarizeSkin(item.skin),
+    quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)),
+  }));
   const total = items.reduce((sum, item) => sum + item.skin.price * item.quantity, 0);
 
   return api<WithdrawTicketBundle>('/api/withdraw/tickets', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       type: 'deposit',
       userId: session.userId,
       userEmail: session.email,
@@ -178,7 +192,7 @@ export async function createDepositTicket(
       total,
       bonusCode: bonus?.code,
       bonusPercent: bonus?.percent,
-    }),
+    })),
   });
 }
 
@@ -190,7 +204,7 @@ export async function createRobuxDepositTicket(
 ): Promise<WithdrawTicketBundle> {
   return api<WithdrawTicketBundle>('/api/withdraw/tickets', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       type: 'deposit',
       depositMethod: 'robux',
       userId: session.userId,
@@ -201,7 +215,7 @@ export async function createRobuxDepositTicket(
       total: 0,
       bonusCode: bonus?.code,
       bonusPercent: bonus?.percent,
-    }),
+    })),
   });
 }
 
@@ -253,13 +267,13 @@ export async function sendWithdrawChatMessage(
 ): Promise<WithdrawTicketBundle> {
   return api<WithdrawTicketBundle>(`/api/withdraw/tickets/${encodeURIComponent(ticketId)}/messages`, {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       senderId: session.userId,
       senderEmail: session.email,
       senderRole: isAdmin ? 'admin' : 'user',
       senderLabel: isAdmin ? 'Admin' : getDisplayName(session),
       text: text.trim(),
-    }),
+    })),
   });
 }
 
@@ -269,7 +283,7 @@ export async function updateWithdrawTicketStatus(
 ): Promise<WithdrawTicketBundle> {
   return api<WithdrawTicketBundle>(`/api/withdraw/tickets/${encodeURIComponent(ticketId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(withSessionToken({ status })),
   });
 }
 
@@ -279,14 +293,14 @@ export async function createHelpTicket(
 ): Promise<WithdrawTicketBundle> {
   return api<WithdrawTicketBundle>('/api/withdraw/tickets', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(withSessionToken({
       type: 'help',
       userId: session.userId,
       userEmail: session.email,
       userLabel,
       skins: [],
       total: 0,
-    }),
+    })),
   });
 }
 

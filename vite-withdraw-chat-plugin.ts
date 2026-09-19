@@ -6,10 +6,33 @@ import { createGiveawayStore } from './server/lib/giveawayStore.mjs';
 import { recordGiveawayDepositFromTicket } from './server/lib/giveawayDepositHook.mjs';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
-import { requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
+import { requireAdmin, requireBoundUser, requireUser, sendJson } from './server/lib/httpAuth.mjs';
 
-const MIN_DEPOSIT_TOTAL = 1000;
+const MIN_DEPOSIT_TOTAL = 500;
 const MIN_WITHDRAW_TOTAL = 20;
+const MAX_DEPOSIT_SKINS = 5_000;
+
+function expandTicketSkins(rawSkins: Array<WithdrawSkinSummary & { quantity?: number }> | undefined, maxUnits = MAX_DEPOSIT_SKINS): WithdrawSkinSummary[] {
+  const out: WithdrawSkinSummary[] = [];
+  for (const entry of Array.isArray(rawSkins) ? rawSkins : []) {
+    if (out.length >= maxUnits) break;
+    const qtyRaw = Number(entry?.quantity);
+    const qty = Number.isFinite(qtyRaw) && qtyRaw > 1
+      ? Math.min(maxUnits - out.length, Math.floor(qtyRaw))
+      : 1;
+    const unit: WithdrawSkinSummary = {
+      id: String(entry?.id || ''),
+      name: String(entry?.name || ''),
+      price: Math.max(0, Number(entry?.price) || 0),
+      weapon: String(entry?.weapon || ''),
+      image: String(entry?.image || ''),
+      wear: String(entry?.wear || ''),
+    };
+    if (!unit.id) continue;
+    for (let i = 0; i < qty; i++) out.push({ ...unit });
+  }
+  return out;
+}
 
 type WithdrawTicketStatus = 'open' | 'completed' | 'cancelled';
 
@@ -290,7 +313,7 @@ export function withdrawChatPlugin(
           }
 
           if (req.method === 'POST' && url === '/api/withdraw/tickets') {
-            const session = await requireBoundUser(req, res, userStore);
+            const session = requireUser(req, res);
             if (!session) return;
             const body = JSON.parse(await readBody(req)) as {
               type?: 'withdraw' | 'deposit' | 'help';
@@ -359,10 +382,13 @@ export function withdrawChatPlugin(
                 return;
               }
 
-              const skins = body.skins ?? [];
-              const total = skins.reduce((sum, s) => sum + s.price, 0);
+              const skins = expandTicketSkins(body.skins, MAX_DEPOSIT_SKINS);
+              const total = skins.reduce((sum, s) => sum + Math.max(0, Number(s?.price) || 0), 0);
               if (!skins.length || !Number.isFinite(total) || total < MIN_DEPOSIT_TOTAL) {
-                sendJson(res, 400, { error: 'invalid deposit' });
+                sendJson(res, 400, {
+                  error: 'invalid deposit',
+                  message: `Minimum deposit is ${MIN_DEPOSIT_TOTAL} coins total.`,
+                });
                 return;
               }
               const bonusResult = resolveDepositBonus(body, total);

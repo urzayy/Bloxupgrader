@@ -13,6 +13,7 @@ import { setEssentialCookiesEnabled } from '../lib/cookies';
 import { appendUserLog, initUserLogFile } from '../lib/userActivityLog';
 import { fetchAccountBanStatus } from '../lib/accountBanApi';
 import { fetchAdminStatus } from '../lib/adminEmailsApi';
+import { clearSessionToken, loadSessionToken } from '../lib/sessionToken';
 
 interface AuthContextValue {
   user: Session | null;
@@ -73,6 +74,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 4000);
     return () => window.clearInterval(id);
   }, [user, refreshAdminStatus]);
+
+  useEffect(() => {
+    if (!user) return;
+    // After wipe / token-version bumps, cookie session alone cannot create deposits.
+    if (!loadSessionToken()) {
+      clearSession();
+      clearSessionToken();
+      setUser(null);
+      setLoginOpen(true);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;

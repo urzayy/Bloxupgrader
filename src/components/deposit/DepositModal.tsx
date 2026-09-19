@@ -153,13 +153,18 @@ export function DepositModal({ open, onClose, onRequestDeposit }: Props) {
                     return false;
                   }
                 }
-                const ticketId = await onRequestDeposit(items, appliedBonus ?? undefined);
-                if (!ticketId) {
-                  setError('Could not create the deposit request. Please try again.');
+                try {
+                  const bundle = await onRequestDeposit(items, appliedBonus ?? undefined);
+                  if (!bundle?.ticket?.id) {
+                    setError('Could not create the deposit request. Please try again.');
+                    return false;
+                  }
+                  onClose();
+                  return true;
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : 'Could not create the deposit request. Please try again.');
                   return false;
                 }
-                onClose();
-                return true;
               }}
             />
           </motion.div>

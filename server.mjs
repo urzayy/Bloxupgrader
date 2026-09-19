@@ -87,8 +87,31 @@ const STATE_FILE = path.join(STATE_DIR, 'state.json');
 const PORT = Number(process.env.PORT) || 4173;
 const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
 const BASE_TOTAL_UPGRADES = 13_200;
-const MIN_DEPOSIT_TOTAL = 1000;
+const MIN_DEPOSIT_TOTAL = 500;
 const MIN_WITHDRAW_TOTAL = 20;
+const MAX_DEPOSIT_SKINS = 5_000;
+
+function expandTicketSkins(rawSkins, maxUnits = MAX_DEPOSIT_SKINS) {
+  const out = [];
+  for (const entry of Array.isArray(rawSkins) ? rawSkins : []) {
+    if (out.length >= maxUnits) break;
+    const qtyRaw = Number(entry?.quantity);
+    const qty = Number.isFinite(qtyRaw) && qtyRaw > 1
+      ? Math.min(maxUnits - out.length, Math.floor(qtyRaw))
+      : 1;
+    const unit = {
+      id: String(entry?.id || ''),
+      name: String(entry?.name || ''),
+      price: Math.max(0, Number(entry?.price) || 0),
+      weapon: String(entry?.weapon || ''),
+      image: String(entry?.image || ''),
+      wear: String(entry?.wear || ''),
+    };
+    if (!unit.id) continue;
+    for (let i = 0; i < qty; i++) out.push({ ...unit });
+  }
+  return out;
+}
 
 for (const dir of [DATA_DIR, LOGS_DIR, USER_DB_DIR, path.join(USER_DB_DIR, 'events'), PLAYER_STATE_DIR, ACCOUNT_RESETS_DIR, ACCOUNT_BANS_DIR, CHATS_DIR, GRANTS_DIR, BALANCE_GRANTS_DIR, LEVEL_GRANTS_DIR, STATE_DIR, PROMO_CODES_DIR, ANNOUNCEMENTS_DIR, PROFILE_PHOTOS_DIR, GIVEAWAYS_DIR, CASE_BATTLES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -486,7 +509,7 @@ function saveLevelGrantStore(store) {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '4mb' }));
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -527,13 +550,27 @@ app.use(rateLimitPaths(
     '/api/inventory-grants',
     '/api/balance-grants',
     '/api/level-grants',
-    '/api/withdraw/tickets',
-    '/api/player-state/sync',
   ],
   {
     windowMs: 60_000,
     max: 20,
     key: (req, ip) => `admin:${ip}`,
+  },
+));
+app.use(rateLimitPaths(
+  ['/api/withdraw/tickets'],
+  {
+    windowMs: 60_000,
+    max: 60,
+    key: (req, ip) => `tickets:${ip}`,
+  },
+));
+app.use(rateLimitPaths(
+  ['/api/player-state/sync'],
+  {
+    windowMs: 60_000,
+    max: 120,
+    key: (req, ip) => `sync:${ip}`,
   },
 ));
 app.use(rateLimitPaths(
@@ -1874,6 +1911,7 @@ app.patch('/api/withdraw/tickets/:ticketId', async (req, res) => {
 });
 
 app.post('/api/withdraw/tickets', async (req, res) => {
+  try {
   const session = requireUserSession(req, res);
   if (!session) return;
   const body = req.body ?? {};
@@ -1938,10 +1976,13 @@ app.post('/api/withdraw/tickets', async (req, res) => {
       return;
     }
 
-    const skins = Array.isArray(body.skins) ? body.skins.slice(0, 100) : [];
+    const skins = expandTicketSkins(body.skins, MAX_DEPOSIT_SKINS);
     const total = skins.reduce((sum, s) => sum + Math.max(0, Number(s?.price) || 0), 0);
     if (!skins.length || !Number.isFinite(total) || total < MIN_DEPOSIT_TOTAL) {
-      sendJson(res, 400, { error: 'invalid deposit' });
+      sendJson(res, 400, {
+        error: 'invalid deposit',
+        message: `Minimum deposit is ${MIN_DEPOSIT_TOTAL} coins total.`,
+      });
       return;
     }
     const bonusResult = resolveDepositBonus(body, total);
@@ -2071,6 +2112,10 @@ app.post('/api/withdraw/tickets', async (req, res) => {
   };
   await withdrawChatStore.saveBundle(bundle);
   sendJson(res, 200, bundle);
+  } catch (error) {
+    console.error('[withdraw-chat] create ticket failed:', error);
+    sendJson(res, 500, { error: 'failed to create ticket', message: 'Could not create the request. Please try again.' });
+  }
 });
 
 if (!fs.existsSync(DIST)) {

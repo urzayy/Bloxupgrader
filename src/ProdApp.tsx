@@ -386,11 +386,14 @@ export default function ProdApp() {
       });
       sfx.select();
       return bundle;
-    } catch {
+    } catch (error) {
       log('DEPOSIT.request_failed', { total: formatUSD(total) });
-      return null;
+      if (error instanceof Error && /sign in again/i.test(error.message)) {
+        openLogin();
+      }
+      throw error;
     }
-  }, [user, log]);
+  }, [user, openLogin, log]);
 
   const handleRobuxDepositRequest = useCallback(async (
     robuxAmount: number,
