@@ -480,7 +480,7 @@ export default function ProdApp() {
     };
 
     void syncWithdrawState();
-    const id = setInterval(() => { void syncWithdrawState(); }, 8000);
+    const id = setInterval(() => { void syncWithdrawState(); }, 15000);
     return () => clearInterval(id);
   }, [user, applyWithdrawCompletion, applyDepositCompletion]);
 
@@ -536,7 +536,7 @@ export default function ProdApp() {
     };
 
     void syncPendingGifts();
-    const id = setInterval(() => { void syncPendingGifts(); }, 8000);
+    const id = setInterval(() => { void syncPendingGifts(); }, 15000);
     return () => clearInterval(id);
   }, [user, log]);
 
@@ -580,7 +580,7 @@ export default function ProdApp() {
     };
 
     void syncPendingBalanceGifts();
-    const id = setInterval(() => { void syncPendingBalanceGifts(); }, 8000);
+    const id = setInterval(() => { void syncPendingBalanceGifts(); }, 15000);
     return () => clearInterval(id);
   }, [user, log]);
 
@@ -627,7 +627,7 @@ export default function ProdApp() {
     };
 
     void syncPendingLevelGifts();
-    const id = setInterval(() => { void syncPendingLevelGifts(); }, 8000);
+    const id = setInterval(() => { void syncPendingLevelGifts(); }, 15000);
     return () => clearInterval(id);
   }, [user, log]);
 
@@ -692,7 +692,7 @@ export default function ProdApp() {
     const id = setInterval(() => {
       void pollReset();
       void pollBan();
-    }, 500);
+    }, 15000);
     return () => clearInterval(id);
   }, [user, documentVisible, applyPendingAccountReset, authLogout, openLogin]);
 
@@ -712,7 +712,7 @@ export default function ProdApp() {
     };
 
     void syncSiteState();
-    const id = setInterval(() => { void syncSiteState(); }, 5000);
+    const id = setInterval(() => { void syncSiteState(); }, 10000);
     return () => {
       cancelled = true;
       clearInterval(id);

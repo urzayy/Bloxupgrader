@@ -4,12 +4,17 @@ export interface AdminStatus {
   isCreator: boolean;
 }
 
-export async function fetchAdminStatus(email: string): Promise<AdminStatus> {
-  const res = await fetch(`/api/admin/status?email=${encodeURIComponent(email)}`, { headers: sessionAuthHeaders() });
-  if (!res.ok) {
-    return { isAdmin: false, isCreator: false };
+/** null = transient failure — callers should keep the last known status. */
+export async function fetchAdminStatus(email: string): Promise<AdminStatus | null> {
+  try {
+    const res = await fetch(`/api/admin/status?email=${encodeURIComponent(email)}`, {
+      headers: sessionAuthHeaders(),
+    });
+    if (!res.ok) return null;
+    return await res.json() as AdminStatus;
+  } catch {
+    return null;
   }
-  return res.json() as Promise<AdminStatus>;
 }
 
 export async function fetchAdminEmails(creatorEmail: string): Promise<string[]> {

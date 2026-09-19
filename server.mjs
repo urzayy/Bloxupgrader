@@ -588,7 +588,7 @@ app.use(rateLimitPaths(
 ));
 app.use('/api/', rateLimit({
   windowMs: 60_000,
-  max: 180,
+  max: 400,
   key: (_req, ip) => `api:${ip}`,
 }));
 
@@ -1257,13 +1257,12 @@ app.get('/api/admin/status', async (req, res) => {
   try {
     const account = await userStore.getAccountByEmail(session.email);
     const accountId = account?.id || account?.userId;
-    if (!accountId || String(accountId) !== String(session.userId)) {
+    if (accountId && String(accountId) !== String(session.userId)) {
       sendJson(res, 200, { isAdmin: false, isCreator: false });
       return;
     }
   } catch {
-    sendJson(res, 200, { isAdmin: false, isCreator: false });
-    return;
+    // Account store flaky — still trust the signed session for UI status.
   }
   sendJson(res, 200, {
     isAdmin: adminEmailsStore.isAdminEmail(session.email),

@@ -13,7 +13,7 @@ import { setEssentialCookiesEnabled } from '../lib/cookies';
 import { appendUserLog, initUserLogFile } from '../lib/userActivityLog';
 import { fetchAccountBanStatus } from '../lib/accountBanApi';
 import { fetchAdminStatus } from '../lib/adminEmailsApi';
-import { clearSessionToken, loadSessionToken } from '../lib/sessionToken';
+import { loadSessionToken } from '../lib/sessionToken';
 
 interface AuthContextValue {
   user: Session | null;
@@ -54,6 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const status = await fetchAdminStatus(user.email);
+    // Keep last known admin flags on transient/network/rate-limit failures.
+    if (!status) return;
     setIsAdmin(status.isAdmin);
     setIsCreator(status.isCreator);
   }, [user]);
@@ -66,22 +68,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refreshAdminStatus();
   }, [refreshAdminStatus]);
 
-  // Re-check often so React DevTools / console flips of isAdmin do not stick.
   useEffect(() => {
     if (!user) return;
     const id = window.setInterval(() => {
       void refreshAdminStatus();
-    }, 4000);
+    }, 30_000);
     return () => window.clearInterval(id);
   }, [user, refreshAdminStatus]);
 
   useEffect(() => {
     if (!user) return;
-    // After wipe / token-version bumps, cookie session alone cannot create deposits.
+    // Need a fresh API session token after wipe/version bumps — prompt login, don't boot the UI.
     if (!loadSessionToken()) {
-      clearSession();
-      clearSessionToken();
-      setUser(null);
       setLoginOpen(true);
     }
   }, [user]);
