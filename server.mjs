@@ -174,17 +174,29 @@ try {
   if (!fs.existsSync(markerPath)) {
     const published = announcementStore.publish({
       title: 'BloxUpgrader.com for sale',
-      message: 'Se vende bloxupgrader.com — contact me on Discord @urzayy or open a ticket in the web Discord!!!',
-      createdBy: 'urzay1v1@gmail.com',
-    });
-    if (published.announcement) {
-      const pinned = { ...published.announcement, id: SALE_NOTICE_ID };
+      message: 'BloxUpgrader.com is for sale — contact me on Discord @urzayy or open a ticket in the web Discord!!!',
+        createdBy: 'urzay1v1@gmail.com',
+      });
+      if (published.announcement) {
+        const pinned = { ...published.announcement, id: SALE_NOTICE_ID };
+        fs.writeFileSync(path.join(ANNOUNCEMENTS_DIR, 'active.json'), JSON.stringify(pinned, null, 2), 'utf8');
+        try { announcementsDurable?.handle.persist(); } catch { /* ignore */ }
+      }
+      fs.writeFileSync(markerPath, String(Date.now()), 'utf8');
+      console.log('[announcement] sale notice published');
+    }
+    // Always keep the English sale notice active after the one-shot marker exists.
+    const current = announcementStore.getActive();
+    if (current?.id === SALE_NOTICE_ID && /Se vende/i.test(String(current.message || ''))) {
+      const pinned = {
+        ...current,
+        title: 'BloxUpgrader.com for sale',
+        message: 'BloxUpgrader.com is for sale — contact me on Discord @urzayy or open a ticket in the web Discord!!!',
+      };
       fs.writeFileSync(path.join(ANNOUNCEMENTS_DIR, 'active.json'), JSON.stringify(pinned, null, 2), 'utf8');
       try { announcementsDurable?.handle.persist(); } catch { /* ignore */ }
+      console.log('[announcement] sale notice updated to English');
     }
-    fs.writeFileSync(markerPath, String(Date.now()), 'utf8');
-    console.log('[announcement] sale notice published');
-  }
 } catch (error) {
   console.error('[announcement] sale notice failed', error);
 }
