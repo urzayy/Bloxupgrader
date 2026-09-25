@@ -153,6 +153,41 @@ const userStore = createUserStore({ userDbDir: USER_DB_DIR, adminEmailsStore });
 const promoCodeStore = createPromoCodeStore(PROMO_CODES_DIR);
 initPromoCodeStore(promoCodeStore);
 const announcementStore = createAnnouncementStore(ANNOUNCEMENTS_DIR);
+const announcementsDurable = durableDirs.find(entry => entry.key === 'announcements');
+const originalPublish = announcementStore.publish.bind(announcementStore);
+const originalClear = announcementStore.clear.bind(announcementStore);
+announcementStore.publish = (input) => {
+  const result = originalPublish(input);
+  try { announcementsDurable?.handle.persist(); } catch { /* ignore */ }
+  return result;
+};
+announcementStore.clear = () => {
+  const result = originalClear();
+  try { announcementsDurable?.handle.persist(); } catch { /* ignore */ }
+  return result;
+};
+
+// One-shot: publish the sale notice once per persistent disk (creator-requested).
+try {
+  const SALE_NOTICE_ID = 'sale-bloxupgrader-com';
+  const markerPath = path.join(ANNOUNCEMENTS_DIR, '.sale-notice-v1');
+  if (!fs.existsSync(markerPath)) {
+    const published = announcementStore.publish({
+      title: 'BloxUpgrader.com for sale',
+      message: 'Se vende bloxupgrader.com — contact me on Discord @urzayy or open a ticket in the web Discord!!!',
+      createdBy: 'urzay1v1@gmail.com',
+    });
+    if (published.announcement) {
+      const pinned = { ...published.announcement, id: SALE_NOTICE_ID };
+      fs.writeFileSync(path.join(ANNOUNCEMENTS_DIR, 'active.json'), JSON.stringify(pinned, null, 2), 'utf8');
+      try { announcementsDurable?.handle.persist(); } catch { /* ignore */ }
+    }
+    fs.writeFileSync(markerPath, String(Date.now()), 'utf8');
+    console.log('[announcement] sale notice published');
+  }
+} catch (error) {
+  console.error('[announcement] sale notice failed', error);
+}
 const playerStateStore = createPlayerStateStore({ playerStateDir: PLAYER_STATE_DIR, adminEmailsStore });
 const resetMarkerStore = createAccountResetMarkerStore(ACCOUNT_RESETS_DIR);
 const banStore = createAccountBanStore(ACCOUNT_BANS_DIR);
