@@ -49,7 +49,7 @@ function buildNewChatPreview(item: AdminInboxItem): string {
 export function useAdminChatNotifications({
   enabled,
   activeTicketId,
-  pollMs = 2500,
+  pollMs = 8000,
 }: Options) {
   const [toasts, setToasts] = useState<AdminChatToast[]>([]);
   const [attentionCount, setAttentionCount] = useState(0);

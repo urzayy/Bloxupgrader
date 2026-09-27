@@ -278,29 +278,36 @@ console.log(`[data] DATA_DIR=${DATA_DIR}`);
 
 async function cancelOpenTickets({ depositsOnly = false } = {}) {
   const tickets = await withdrawChatStore.listTickets({ openOnly: true });
+  const targets = tickets.filter((ticket) => {
+    const type = ticket.type ?? 'withdraw';
+    if (depositsOnly && type !== 'deposit') return false;
+    return true;
+  });
   let cancelled = 0;
   const now = Date.now();
-  for (const ticket of tickets) {
-    const type = ticket.type ?? 'withdraw';
-    if (depositsOnly && type !== 'deposit') continue;
-    const bundle = await withdrawChatStore.loadBundle(ticket.id);
-    if (!bundle || bundle.ticket.status !== 'open') continue;
-    bundle.ticket.status = 'cancelled';
-    bundle.ticket.updatedAt = now;
-    bundle.messages.push({
-      id: `msg_${now}_sys_${cancelled}`,
-      ticketId: ticket.id,
-      senderId: 'system',
-      senderEmail: 'system@blox-upgrader',
-      senderRole: 'system',
-      senderLabel: 'System',
-      text: depositsOnly
-        ? 'Deposit request cancelled by administrator.'
-        : 'Chat closed by administrator.',
-      createdAt: now,
-    });
-    await withdrawChatStore.saveBundle(bundle);
-    cancelled += 1;
+  const chunkSize = 8;
+  for (let i = 0; i < targets.length; i += chunkSize) {
+    const chunk = targets.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(async (ticket) => {
+      const bundle = await withdrawChatStore.loadBundle(ticket.id);
+      if (!bundle || bundle.ticket.status !== 'open') return;
+      bundle.ticket.status = 'cancelled';
+      bundle.ticket.updatedAt = now;
+      bundle.messages.push({
+        id: `msg_${now}_sys_${ticket.id}`,
+        ticketId: ticket.id,
+        senderId: 'system',
+        senderEmail: 'system@blox-upgrader',
+        senderRole: 'system',
+        senderLabel: 'System',
+        text: depositsOnly
+          ? 'Deposit request cancelled by administrator.'
+          : 'Chat closed by administrator.',
+        createdAt: now,
+      });
+      await withdrawChatStore.saveBundle(bundle);
+      cancelled += 1;
+    }));
   }
   return cancelled;
 }
