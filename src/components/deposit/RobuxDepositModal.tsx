@@ -55,6 +55,10 @@ export function RobuxDepositModal({ open, onClose, onSubmit }: Props) {
 
   const handleApplyCode = async () => {
     setCodeError('');
+    if (!codeInput.trim()) {
+      setAppliedBonus(null);
+      return;
+    }
     const result = await validateDepositBonusCode(codeInput);
     if (!result.valid) {
       setAppliedBonus(null);

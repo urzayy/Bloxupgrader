@@ -190,8 +190,9 @@ export async function createDepositTicket(
       userLabel,
       skins,
       total,
-      bonusCode: bonus?.code,
-      bonusPercent: bonus?.percent,
+      ...(bonus?.code
+        ? { bonusCode: bonus.code, bonusPercent: bonus.percent }
+        : {}),
     })),
   });
 }
@@ -213,8 +214,9 @@ export async function createRobuxDepositTicket(
       robuxAmount,
       skins: [],
       total: 0,
-      bonusCode: bonus?.code,
-      bonusPercent: bonus?.percent,
+      ...(bonus?.code
+        ? { bonusCode: bonus.code, bonusPercent: bonus.percent }
+        : {}),
     })),
   });
 }

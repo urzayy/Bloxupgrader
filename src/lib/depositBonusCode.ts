@@ -16,8 +16,12 @@ export async function validateDepositBonusCode(code: string): Promise<{
   percent: number;
   error?: string;
 }> {
+  const trimmed = code.trim();
+  if (!trimmed) {
+    return { valid: false, percent: 0, error: undefined };
+  }
   try {
-    return await validatePromoCode(code);
+    return await validatePromoCode(trimmed);
   } catch {
     return { valid: false, percent: 0, error: 'Could not validate the code. Try again.' };
   }

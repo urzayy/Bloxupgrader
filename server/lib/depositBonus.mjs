@@ -63,7 +63,7 @@ export function resolveRobuxDepositBonus(body, robuxAmount) {
 
 export function resolveDepositBonus(body, baseTotal) {
   const rawCode = body?.bonusCode;
-  if (!rawCode) {
+  if (rawCode == null || String(rawCode).trim() === '') {
     return { creditTotal: baseTotal, bonusCode: null, bonusPercent: 0 };
   }
 

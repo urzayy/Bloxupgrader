@@ -21,20 +21,21 @@ export function DepositBonusCodeField({
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
         <label className="shrink-0 font-display text-[10px] font-bold uppercase tracking-wide text-white/45">
-          Code
+          Code <span className="normal-case text-white/30">(optional)</span>
         </label>
         <input
           type="text"
           value={code}
           disabled={applied}
+          autoComplete="off"
           onChange={event => onCodeChange(event.target.value)}
           onKeyDown={event => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              onApply();
+              if (code.trim()) onApply();
             }
           }}
-          placeholder="Bonus code"
+          placeholder="Optional bonus code"
           className="input-filter min-w-0 flex-1 py-1.5 text-[10px] uppercase disabled:opacity-50"
         />
         {applied ? (
@@ -49,7 +50,8 @@ export function DepositBonusCodeField({
           <button
             type="button"
             onClick={onApply}
-            className="shrink-0 rounded-lg border border-gold/45 bg-gradient-to-r from-[#9333ea] to-[#b56bff] px-3 py-1.5 font-display text-[10px] font-bold uppercase tracking-wide text-white shadow-[0_0_16px_rgba(176,108,255,0.25)] transition hover:border-gold hover:brightness-105"
+            disabled={!code.trim()}
+            className="shrink-0 rounded-lg border border-gold/45 bg-gradient-to-r from-[#9333ea] to-[#b56bff] px-3 py-1.5 font-display text-[10px] font-bold uppercase tracking-wide text-white shadow-[0_0_16px_rgba(176,108,255,0.25)] transition hover:border-gold hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Apply
           </button>
