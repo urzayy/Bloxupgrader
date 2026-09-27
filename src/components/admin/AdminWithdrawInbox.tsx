@@ -35,9 +35,9 @@ export function AdminWithdrawInbox({ open, onClose, onOpenTicket }: Props) {
         if (cancelled) return;
         setItems(nextItems);
         setError('');
-      } catch {
+      } catch (err) {
         if (cancelled) return;
-        setError('Could not load withdrawal requests.');
+        setError(err instanceof Error ? err.message : 'Could not load chats.');
       }
     };
 

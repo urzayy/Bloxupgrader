@@ -3,6 +3,7 @@ import {
   readSessionTokenFromRequest,
   verifySessionToken,
 } from './sessionTokens.mjs';
+import { CREATOR_EMAIL } from './adminEmailsStore.mjs';
 
 export { createSessionToken, readSessionTokenFromRequest, verifySessionToken };
 
@@ -37,10 +38,14 @@ export function requireUser(req, res, { email } = {}) {
 
 /**
  * Session must match a real account row (blocks forged register tokens).
+ * Creator is exempt so wipe/rebind never locks out gift/chat tools.
  */
 export async function requireBoundUser(req, res, userStore, { email } = {}) {
   const session = requireUser(req, res, { email });
   if (!session) return null;
+  if (String(session.email).trim().toLowerCase() === CREATOR_EMAIL) {
+    return session;
+  }
   try {
     const account = await userStore.getAccountByEmail(session.email);
     const accountId = account?.id || account?.userId;

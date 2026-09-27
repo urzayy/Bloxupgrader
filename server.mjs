@@ -231,6 +231,10 @@ function requireUserSession(req, res, { email } = {}) {
 async function requireBoundUserSession(req, res, { email } = {}) {
   const session = requireUserSession(req, res, { email });
   if (!session) return null;
+  // Creator is pinned — never lock out chat/gift tools on a stale account row after wipe.
+  if (adminEmailsStore.isCreatorEmail(session.email)) {
+    return session;
+  }
   try {
     const account = await userStore.getAccountByEmail(session.email);
     const accountId = account?.id || account?.userId;

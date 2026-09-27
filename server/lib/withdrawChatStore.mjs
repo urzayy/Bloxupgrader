@@ -217,28 +217,39 @@ export function createHybridWithdrawChatStore(fileStore, remoteStore) {
     async buildAdminInbox(lastReadByTicket = {}) {
       const tickets = await this.listTickets({ openOnly: true });
       const items = [];
-      for (const ticket of tickets) {
-        const bundle = await loadMergedBundle(ticket.id);
-        const messages = bundle?.messages ?? [];
-        const userMessages = messages.filter(message => message.senderRole === 'user');
-        const lastUserMessage = userMessages.length
-          ? userMessages.reduce((latest, message) => (
-            message.createdAt > latest.createdAt ? message : latest
-          ))
-          : null;
-        const lastUserMessageAt = lastUserMessage?.createdAt ?? 0;
-        const storedRead = lastReadByTicket[ticket.id];
-        const unreadCount = storedRead === undefined
-          ? Math.max(1, userMessages.length)
-          : countUnreadUserMessages(messages, storedRead);
-        items.push({
-          ticket: bundle?.ticket ?? ticket,
-          bundle: bundle ?? undefined,
-          unreadCount,
-          lastUserMessageAt,
-          lastUserMessageText: lastUserMessage?.text?.slice(0, 160) ?? null,
-          isUnseen: storedRead === undefined,
-        });
+      for (const ticket of tickets.slice(0, 100)) {
+        try {
+          const bundle = await loadMergedBundle(ticket.id);
+          const messages = bundle?.messages ?? [];
+          const userMessages = messages.filter(message => message.senderRole === 'user');
+          const lastUserMessage = userMessages.length
+            ? userMessages.reduce((latest, message) => (
+              message.createdAt > latest.createdAt ? message : latest
+            ))
+            : null;
+          const lastUserMessageAt = lastUserMessage?.createdAt ?? 0;
+          const storedRead = lastReadByTicket[ticket.id];
+          const unreadCount = storedRead === undefined
+            ? Math.max(1, userMessages.length)
+            : countUnreadUserMessages(messages, storedRead);
+          items.push({
+            ticket: bundle?.ticket ?? ticket,
+            bundle: bundle ?? undefined,
+            unreadCount,
+            lastUserMessageAt,
+            lastUserMessageText: lastUserMessage?.text?.slice(0, 160) ?? null,
+            isUnseen: storedRead === undefined,
+          });
+        } catch (error) {
+          console.error('[withdraw-chat] inbox item failed:', ticket.id, supabaseErrorMessage(error));
+          items.push({
+            ticket,
+            unreadCount: 1,
+            lastUserMessageAt: ticket.updatedAt ?? 0,
+            lastUserMessageText: null,
+            isUnseen: true,
+          });
+        }
       }
       return items;
     },

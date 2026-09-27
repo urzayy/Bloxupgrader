@@ -244,9 +244,9 @@ export async function fetchAdminInbox(
 ): Promise<AdminInboxItem[]> {
   const data = await api<{ items: AdminInboxItem[] }>('/api/withdraw/admin-inbox', {
     method: 'POST',
-    body: JSON.stringify({ lastReadByTicket }),
+    body: JSON.stringify(withSessionToken({ lastReadByTicket })),
   });
-  return data.items;
+  return data.items ?? [];
 }
 
 export async function loadAdminInbox(): Promise<AdminInboxItem[]> {
