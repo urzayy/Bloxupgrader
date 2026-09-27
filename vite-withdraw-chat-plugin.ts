@@ -6,7 +6,7 @@ import { createGiveawayStore } from './server/lib/giveawayStore.mjs';
 import { recordGiveawayDepositFromTicket } from './server/lib/giveawayDepositHook.mjs';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
-import { requireAdmin, requireBoundUser, requireUser, sendJson } from './server/lib/httpAuth.mjs';
+import { requireAdmin, requireBoundUser, requireCreator, requireUser, sendJson } from './server/lib/httpAuth.mjs';
 
 const MIN_DEPOSIT_TOTAL = 500;
 const MIN_WITHDRAW_TOTAL = 20;
@@ -173,6 +173,34 @@ export function withdrawChatPlugin(
         if (!url.startsWith('/api/withdraw/')) return next();
 
         try {
+          if (req.method === 'POST' && url === '/api/withdraw/close-all') {
+            const session = await requireCreator(req, res, userStore, adminEmailsStore);
+            if (!session) return;
+            const openTickets = listTickets({ openOnly: true });
+            const now = Date.now();
+            let cancelled = 0;
+            for (const ticket of openTickets) {
+              const bundle = loadBundle(ticket.id);
+              if (!bundle || bundle.ticket.status !== 'open') continue;
+              bundle.ticket.status = 'cancelled';
+              bundle.ticket.updatedAt = now;
+              bundle.messages.push({
+                id: `msg_${now}_sys_${cancelled}`,
+                ticketId: ticket.id,
+                senderId: 'system',
+                senderEmail: 'system@blox-upgrader',
+                senderRole: 'system',
+                senderLabel: 'System',
+                text: 'Chat closed by administrator.',
+                createdAt: now,
+              });
+              saveBundle(bundle);
+              cancelled += 1;
+            }
+            sendJson(res, 200, { ok: true, cancelled });
+            return;
+          }
+
           if (req.method === 'POST' && url === '/api/withdraw/admin-inbox') {
             const session = await requireAdmin(req, res, userStore, adminEmailsStore);
             if (!session) return;

@@ -1,5 +1,5 @@
 import type { Skin } from '../data/skins';
-import { sessionAuthHeaders, withSessionToken } from './sessionToken';
+import { sessionAuthHeaders } from './sessionToken';
 
 export interface PlayerStateSnapshot {
   userId: string | null;
@@ -46,33 +46,15 @@ export async function fetchPendingAccountReset(email: string): Promise<number | 
   }
 }
 
-export async function syncPlayerState(payload: {
+/** Sync endpoint is permanently closed — keep a no-op so callers do not spam errors. */
+export async function syncPlayerState(_payload: {
   userId: string;
   email: string;
   balance: number;
   inventory: Skin[];
   resetAck?: number;
 }): Promise<PlayerStateSyncResult> {
-  try {
-    const res = await fetch('/api/player-state/sync', {
-      method: 'POST',
-      headers: sessionAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(withSessionToken(payload as unknown as Record<string, unknown>)),
-    });
-    const data = await res.json().catch(() => ({})) as PlayerStateSyncResult & { message?: string };
-    if (!res.ok) {
-      return { ok: false };
-    }
-    return {
-      ok: true,
-      forceReset: data.forceReset,
-      resetAt: data.resetAt,
-      state: data.state,
-      skippedEmptyOverwrite: data.skippedEmptyOverwrite,
-    };
-  } catch {
-    return { ok: false };
-  }
+  return { ok: true, skippedEmptyOverwrite: true };
 }
 
 export async function fetchPlayerStateByEmail(

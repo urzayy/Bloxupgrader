@@ -18,6 +18,7 @@ import { WithdrawChatModal } from '../withdraw/WithdrawChatModal';
 import { DepositModal, type DepositItem } from '../deposit/DepositModal';
 import { DepositMethodModal } from '../deposit/DepositMethodModal';
 import { RobuxDepositModal } from '../deposit/RobuxDepositModal';
+import { CashDepositModal } from '../deposit/CashDepositModal';
 import type { AppliedDepositBonus } from '../../lib/depositBonusCode';
 import { LiveChatsInbox } from '../support/LiveChatsInbox';
 import { LiveChatsFloatingButton } from '../support/LiveChatsFloatingButton';
@@ -77,6 +78,7 @@ export function Header({
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositMethodOpen, setDepositMethodOpen] = useState(false);
   const [robuxDepositOpen, setRobuxDepositOpen] = useState(false);
+  const [cashDepositOpen, setCashDepositOpen] = useState(false);
   const [liveChatsOpen, setLiveChatsOpen] = useState(false);
   const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [supportChatTicketId, setSupportChatTicketId] = useState<string | null>(null);
@@ -283,6 +285,7 @@ export function Header({
         onClose={() => setDepositMethodOpen(false)}
         onSelectRobux={() => setRobuxDepositOpen(true)}
         onSelectSkins={() => setDepositOpen(true)}
+        onSelectCash={() => setCashDepositOpen(true)}
       />
       {onRobuxDepositRequest && (
         <RobuxDepositModal
@@ -295,6 +298,10 @@ export function Header({
           }}
         />
       )}
+      <CashDepositModal
+        open={cashDepositOpen}
+        onClose={() => setCashDepositOpen(false)}
+      />
       <DepositModal
         open={depositOpen}
         onClose={() => setDepositOpen(false)}

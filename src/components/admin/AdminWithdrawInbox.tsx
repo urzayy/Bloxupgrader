@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CoinPrice } from '../ui/CoinPrice';
-import { loadAdminInbox, getTicketAttentionCount, getTicketType, formatWithdrawSummary, isRobuxDeposit, type AdminInboxItem, type WithdrawTicketBundle } from '../../lib/withdrawChat';
+import { useAuth } from '../../context/AuthContext';
+import {
+  closeAllOpenChats,
+  loadAdminInbox,
+  getTicketAttentionCount,
+  getTicketType,
+  formatWithdrawSummary,
+  isRobuxDeposit,
+  type AdminInboxItem,
+  type WithdrawTicketBundle,
+} from '../../lib/withdrawChat';
 
 interface Props {
   open: boolean;
@@ -10,8 +20,10 @@ interface Props {
 }
 
 export function AdminWithdrawInbox({ open, onClose, onOpenTicket }: Props) {
+  const { isCreator } = useAuth();
   const [items, setItems] = useState<AdminInboxItem[]>([]);
   const [error, setError] = useState('');
+  const [closingAll, setClosingAll] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -36,6 +48,21 @@ export function AdminWithdrawInbox({ open, onClose, onOpenTicket }: Props) {
       clearInterval(id);
     };
   }, [open]);
+
+  const handleCloseAll = async () => {
+    if (!isCreator || closingAll) return;
+    if (!window.confirm('Close ALL open chats? This cannot be undone.')) return;
+    setClosingAll(true);
+    setError('');
+    try {
+      await closeAllOpenChats();
+      setItems([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not close chats.');
+    } finally {
+      setClosingAll(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -72,13 +99,25 @@ export function AdminWithdrawInbox({ open, onClose, onOpenTicket }: Props) {
                   Open deposit and withdraw chats
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/50 transition hover:border-white/25 hover:text-white"
-              >
-                Close
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {isCreator && (
+                  <button
+                    type="button"
+                    disabled={closingAll}
+                    onClick={() => { void handleCloseAll(); }}
+                    className="rounded-lg border border-risk/40 bg-risk/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-risk transition hover:bg-risk/20 disabled:opacity-40"
+                  >
+                    {closingAll ? 'Closing…' : 'Close all chats'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/50 transition hover:border-white/25 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-3">

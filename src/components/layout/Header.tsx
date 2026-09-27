@@ -65,6 +65,9 @@ const DepositMethodModal = lazy(() =>
 const RobuxDepositModal = lazy(() =>
   import('../deposit/RobuxDepositModal').then(m => ({ default: m.RobuxDepositModal })),
 );
+const CashDepositModal = lazy(() =>
+  import('../deposit/CashDepositModal').then(m => ({ default: m.CashDepositModal })),
+);
 const LiveChatsInbox = lazy(() =>
   import('../support/LiveChatsInbox').then(m => ({ default: m.LiveChatsInbox })),
 );
@@ -126,6 +129,7 @@ export function Header({
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositMethodOpen, setDepositMethodOpen] = useState(false);
   const [robuxDepositOpen, setRobuxDepositOpen] = useState(false);
+  const [cashDepositOpen, setCashDepositOpen] = useState(false);
   const [liveChatsOpen, setLiveChatsOpen] = useState(false);
   const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [supportChatTicketId, setSupportChatTicketId] = useState<string | null>(null);
@@ -360,6 +364,7 @@ export function Header({
         onClose={() => setDepositMethodOpen(false)}
         onSelectRobux={() => setRobuxDepositOpen(true)}
         onSelectSkins={() => setDepositOpen(true)}
+        onSelectCash={() => setCashDepositOpen(true)}
       />
       ) : null}
       {onRobuxDepositRequest && robuxDepositOpen ? (
@@ -371,6 +376,12 @@ export function Header({
             if (bundle) openSupportChat(bundle.ticket.id, bundle);
             return bundle;
           }}
+        />
+      ) : null}
+      {cashDepositOpen ? (
+        <CashDepositModal
+          open={cashDepositOpen}
+          onClose={() => setCashDepositOpen(false)}
         />
       ) : null}
       {depositOpen ? (

@@ -251,6 +251,15 @@ export async function loadAdminInbox(): Promise<AdminInboxItem[]> {
   return fetchAdminInbox(getAdminLastReadMap());
 }
 
+/** Creator-only: cancel every open chat (deposit, withdraw, help). */
+export async function closeAllOpenChats(): Promise<number> {
+  const data = await api<{ cancelled?: number }>('/api/withdraw/close-all', {
+    method: 'POST',
+    body: JSON.stringify(withSessionToken({})),
+  });
+  return Number(data.cancelled) || 0;
+}
+
 export function getTicketAttentionCount(item: AdminInboxItem): number {
   return item.unreadCount;
 }

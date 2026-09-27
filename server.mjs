@@ -272,6 +272,47 @@ const withdrawChatStore = createWithdrawChatStore({ chatsDir: CHATS_DIR });
 console.log(`[withdraw-chat] using ${withdrawChatStore.type} store`);
 console.log(`[data] DATA_DIR=${DATA_DIR}`);
 
+async function cancelOpenTickets({ depositsOnly = false } = {}) {
+  const tickets = await withdrawChatStore.listTickets({ openOnly: true });
+  let cancelled = 0;
+  const now = Date.now();
+  for (const ticket of tickets) {
+    const type = ticket.type ?? 'withdraw';
+    if (depositsOnly && type !== 'deposit') continue;
+    const bundle = await withdrawChatStore.loadBundle(ticket.id);
+    if (!bundle || bundle.ticket.status !== 'open') continue;
+    bundle.ticket.status = 'cancelled';
+    bundle.ticket.updatedAt = now;
+    bundle.messages.push({
+      id: `msg_${now}_sys_${cancelled}`,
+      ticketId: ticket.id,
+      senderId: 'system',
+      senderEmail: 'system@blox-upgrader',
+      senderRole: 'system',
+      senderLabel: 'System',
+      text: depositsOnly
+        ? 'Deposit request cancelled by administrator.'
+        : 'Chat closed by administrator.',
+      createdAt: now,
+    });
+    await withdrawChatStore.saveBundle(bundle);
+    cancelled += 1;
+  }
+  return cancelled;
+}
+
+// One-shot: cancel every open deposit after this deploy.
+try {
+  const markerPath = path.join(CHATS_DIR, '.cancel-all-deposits-v1');
+  if (!fs.existsSync(markerPath)) {
+    const cancelled = await cancelOpenTickets({ depositsOnly: true });
+    fs.writeFileSync(markerPath, JSON.stringify({ at: Date.now(), cancelled }, null, 2), 'utf8');
+    console.log(`[withdraw-chat] cancelled ${cancelled} open deposit ticket(s)`);
+  }
+} catch (error) {
+  console.error('[withdraw-chat] cancel deposits failed', error);
+}
+
 if (durableJsonEnabled()) {
   setInterval(() => {
     for (const entry of durableDirs) {
@@ -885,86 +926,13 @@ app.post('/api/user-log', async (req, res) => {
   }
 });
 
-app.post('/api/player-state/sync', async (req, res) => {
-  try {
-    const { balance, inventory, resetAck } = req.body ?? {};
-    const email = String(req.body?.email ?? '').trim().toLowerCase();
-    if (!email) {
-      sendJson(res, 400, { error: 'bad request' });
-      return;
-    }
-    const session = await requireBoundUserSession(req, res, { email });
-    if (!session) return;
-    if (banStore.isBanned(email)) {
-      sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
-      return;
-    }
-    const userId = session.userId;
-    const pendingResetAt = resetMarkerStore.getResetAt(email);
-
-    if (pendingResetAt && Number(resetAck) !== pendingResetAt) {
-      const state = await playerStateStore.savePlayerState({
-        userId,
-        email,
-        balance: 0,
-        inventory: [],
-      });
-      sendJson(res, 200, { ok: true, forceReset: true, resetAt: pendingResetAt, state });
-      return;
-    }
-
-    if (pendingResetAt && Number(resetAck) === pendingResetAt) {
-      resetMarkerStore.clearReset(email, pendingResetAt);
-    }
-
-    let nextBalance = Math.max(0, Math.floor(Number(balance) || 0));
-    let nextInventory = Array.isArray(inventory) ? inventory.slice(0, 500) : [];
-    const existing = await playerStateStore.getPlayerStateByEmail(email);
-    const pendingGrants = loadBalanceGrantStore(email).grants
-      .filter(grant => grant.status === 'pending')
-      .reduce((sum, grant) => sum + Math.max(0, Math.floor(Number(grant.amount) || 0)), 0);
-    const pendingInventoryGrantValue = loadGrantStore(email).grants
-      .filter(grant => grant.status === 'pending')
-      .reduce((sum, grant) => {
-        const unit = Math.max(0, Math.floor(Number(grant?.skin?.price) || 0));
-        const qty = Math.max(1, Math.floor(Number(grant?.quantity) || 1));
-        return sum + unit * qty;
-      }, 0);
-    const existingBalance = Math.max(0, Math.floor(Number(existing?.balance) || 0));
-    const { nextBalance: clamped, blocked } = clampSyncedBalance(
-      existingBalance,
-      nextBalance,
-      pendingGrants,
-    );
-    nextBalance = clamped;
-    if (blocked) {
-      console.warn(`[security] blocked balance inflate email=${email} from=${existingBalance} to=${Math.floor(Number(balance) || 0)}`);
-    }
-
-    const invClamp = clampSyncedInventory(
-      existing?.inventory,
-      nextInventory,
-      pendingInventoryGrantValue,
-    );
-    nextInventory = invClamp.inventory;
-    if (invClamp.blocked) {
-      console.warn(`[security] blocked inventory inflate email=${email}`);
-    }
-
-    const state = await playerStateStore.savePlayerState({
-      userId,
-      email,
-      balance: nextBalance,
-      inventory: nextInventory,
-    });
-    sendJson(res, 200, { ok: true, state });
-  } catch (error) {
-    console.error('[player-state/sync]', error);
-    sendJson(res, 500, {
-      error: 'error',
-      message: error instanceof Error ? error.message : (error?.message ?? 'sync failed'),
-    });
-  }
+app.post('/api/player-state/sync', async (_req, res) => {
+  // Closed: client-trusted balance/inventory sync was the inflate vector.
+  sendJson(res, 410, {
+    ok: false,
+    error: 'sync_disabled',
+    message: 'Player state sync is disabled.',
+  });
 });
 
 app.get('/api/player-state/reset-pending', (req, res) => {
@@ -1824,6 +1792,18 @@ app.get('/api/withdraw/tickets', async (req, res) => {
   } catch (error) {
     console.error('[withdraw-chat] list tickets failed:', error);
     sendJson(res, 500, { error: 'failed to list tickets' });
+  }
+});
+
+app.post('/api/withdraw/close-all', async (req, res) => {
+  try {
+    const session = await requireCreatorSession(req, res);
+    if (!session) return;
+    const cancelled = await cancelOpenTickets({ depositsOnly: false });
+    sendJson(res, 200, { ok: true, cancelled });
+  } catch (error) {
+    console.error('[withdraw-chat] close-all failed:', error);
+    sendJson(res, 500, { error: 'failed to close chats' });
   }
 });
 
