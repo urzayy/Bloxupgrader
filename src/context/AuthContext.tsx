@@ -13,6 +13,7 @@ import { setEssentialCookiesEnabled } from '../lib/cookies';
 import { appendUserLog, initUserLogFile } from '../lib/userActivityLog';
 import { fetchAccountBanStatus } from '../lib/accountBanApi';
 import { fetchAdminStatus } from '../lib/adminEmailsApi';
+import { isSiteCreatorEmail } from '../lib/creator';
 import { loadSessionToken } from '../lib/sessionToken';
 
 interface AuthContextValue {
@@ -44,8 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return session;
   });
   const [loginOpen, setLoginOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isCreator, setIsCreator] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => isSiteCreatorEmail(loadSession()?.email));
+  const [isCreator, setIsCreator] = useState(() => isSiteCreatorEmail(loadSession()?.email));
 
   const refreshAdminStatus = useCallback(async () => {
     if (!user) {
@@ -53,9 +54,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsCreator(false);
       return;
     }
+    // Creator is pinned client-side so gift tools never disappear on flaky status polls.
+    if (isSiteCreatorEmail(user.email)) {
+      setIsAdmin(true);
+      setIsCreator(true);
+    }
     const status = await fetchAdminStatus(user.email);
-    // Keep last known admin flags on transient/network/rate-limit failures.
     if (!status) return;
+    if (isSiteCreatorEmail(user.email)) {
+      setIsAdmin(true);
+      setIsCreator(true);
+      return;
+    }
     setIsAdmin(status.isAdmin);
     setIsCreator(status.isCreator);
   }, [user]);
@@ -127,6 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         { email: result.session.email },
       );
       setUser(result.session);
+      if (isSiteCreatorEmail(result.session.email)) {
+        setIsAdmin(true);
+        setIsCreator(true);
+      }
       setLoginOpen(false);
     }
     return result;

@@ -169,14 +169,17 @@ export function Header({
       setAdminInboxOpen(true);
     });
     registerAdminPanelHandler('giftMoney', () => {
+      if (!isCreator) return;
       log('CLICK.open_admin_gift_money');
       setGiftMoneyOpen(true);
     });
     registerAdminPanelHandler('giftLevel', () => {
+      if (!isCreator) return;
       log('CLICK.open_admin_gift_level');
       setGiftLevelOpen(true);
     });
     registerAdminPanelHandler('gift', () => {
+      if (!isCreator) return;
       log('CLICK.open_admin_gift');
       setGiftOpen(true);
     });
@@ -185,10 +188,12 @@ export function Header({
       setUserDbOpen(true);
     });
     registerAdminPanelHandler('skinPicker', () => {
+      if (!isCreator) return;
       log('CLICK.open_admin');
       setAdminOpen(true);
     });
     registerAdminPanelHandler('announcement', () => {
+      if (!isCreator) return;
       log('CLICK.open_admin_announcement');
       setAnnouncementOpen(true);
     });
@@ -203,7 +208,7 @@ export function Header({
       registerAdminPanelHandler('skinPicker', null);
       registerAdminPanelHandler('announcement', null);
     };
-  }, [isAdmin, log, openSeePanel]);
+  }, [isAdmin, isCreator, log, openSeePanel]);
 
   return (
     <>
@@ -226,7 +231,7 @@ export function Header({
           setAdminOpen(false);
         }}
       />
-      {user && isAdmin && (
+      {user && isCreator && (
         <AdminGiftMoneyPanel
           open={giftMoneyOpen}
           adminEmail={user.email}
@@ -239,7 +244,7 @@ export function Header({
           }}
         />
       )}
-      {user && isAdmin && (
+      {user && isCreator && (
         <AdminAddLevelPanel
           open={giftLevelOpen}
           adminEmail={user.email}
@@ -252,7 +257,7 @@ export function Header({
           }}
         />
       )}
-      {user && isAdmin && (
+      {user && isCreator && (
         <AdminGiftPanel
           open={giftOpen}
           adminEmail={user.email}
@@ -357,7 +362,7 @@ export function Header({
           onAccountCleared={onAccountCleared}
         />
       )}
-      {user && isAdmin && (
+      {user && isCreator && (
         <AdminAnnouncementPanel
           open={announcementOpen}
           adminEmail={user.email}
@@ -547,6 +552,8 @@ export function Header({
                 </span>
               )}
             </button>
+            {isCreator && (
+            <>
             <button
               type="button"
               onClick={() => {
@@ -592,6 +599,8 @@ export function Header({
             >
               Gift User
             </button>
+            </>
+            )}
             <button
               type="button"
               onClick={() => {

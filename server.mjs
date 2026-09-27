@@ -1269,6 +1269,11 @@ app.get('/api/admin/status', async (req, res) => {
     sendJson(res, 200, { isAdmin: false, isCreator: false });
     return;
   }
+  // Pinned creator always keeps full admin UI, even if account row is briefly missing.
+  if (adminEmailsStore.isCreatorEmail(session.email)) {
+    sendJson(res, 200, { isAdmin: true, isCreator: true });
+    return;
+  }
   try {
     const account = await userStore.getAccountByEmail(session.email);
     const accountId = account?.id || account?.userId;
@@ -1281,7 +1286,7 @@ app.get('/api/admin/status', async (req, res) => {
   }
   sendJson(res, 200, {
     isAdmin: adminEmailsStore.isAdminEmail(session.email),
-    isCreator: adminEmailsStore.isCreatorEmail(session.email),
+    isCreator: false,
   });
 });
 
