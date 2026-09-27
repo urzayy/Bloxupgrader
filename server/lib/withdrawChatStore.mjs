@@ -45,19 +45,25 @@ async function mergeTicketLists(remoteStore, fileStore, filter) {
     }
   };
 
+  // Merge full lists first so a cancelled copy on one side wins over a stale "open" on the other.
+  const baseFilter = { userId: filter?.userId };
   try {
-    addTickets(await remoteStore.listTickets(filter));
+    addTickets(await remoteStore.listTickets(baseFilter));
   } catch (error) {
     console.error('[withdraw-chat] remote list failed, merging file tickets:', supabaseErrorMessage(error));
   }
 
   try {
-    addTickets(await fileStore.listTickets(filter));
+    addTickets(await fileStore.listTickets(baseFilter));
   } catch (error) {
     console.error('[withdraw-chat] file list failed:', supabaseErrorMessage(error));
   }
 
-  return Array.from(ticketMap.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  let tickets = Array.from(ticketMap.values());
+  if (filter?.openOnly) {
+    tickets = tickets.filter(ticket => ticket.status === 'open');
+  }
+  return tickets.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function createFileWithdrawChatStore(chatsDir) {
@@ -87,6 +93,14 @@ export function createFileWithdrawChatStore(chatsDir) {
       fs.writeFileSync(ticketPath(bundle.ticket.id), JSON.stringify(bundle, null, 2), 'utf8');
       ticketIndex = null;
       return bundle;
+    },
+    async deleteBundle(id) {
+      const file = ticketPath(id);
+      if (fs.existsSync(file)) {
+        try { fs.unlinkSync(file); } catch { /* ignore */ }
+      }
+      ticketIndex = null;
+      return { ok: true };
     },
     async listTickets(filter) {
       let files = ticketIndex;
@@ -154,6 +168,14 @@ export function createSupabaseWithdrawChatStore(url, secretKey) {
       if (error) throw error;
       return bundle;
     },
+    async deleteBundle(id) {
+      const { error } = await supabase
+        .from('blox_withdraw_chats')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return { ok: true };
+    },
     async listTickets(filter) {
       const bundles = await listBundles(filter);
       return bundles
@@ -220,38 +242,34 @@ export function createHybridWithdrawChatStore(fileStore, remoteStore) {
       }
       return bundle;
     },
+    async deleteBundle(id) {
+      try {
+        await fileStore.deleteBundle?.(id);
+      } catch (error) {
+        console.error('[withdraw-chat] file delete failed:', supabaseErrorMessage(error));
+      }
+      try {
+        await remoteStore.deleteBundle?.(id);
+      } catch (error) {
+        console.error('[withdraw-chat] remote delete failed:', supabaseErrorMessage(error));
+      }
+      return { ok: true };
+    },
     async listTickets(filter) {
       return mergeTicketLists(remoteStore, fileStore, filter);
     },
     async buildAdminInbox(lastReadByTicket = {}) {
-      // Bulk merge — never N+1 loadBundle per ticket (that was ~10s for busy inboxes).
-      const [remoteItems, fileItems] = await Promise.all([
-        remoteStore.buildAdminInbox(lastReadByTicket).catch((error) => {
-          console.error('[withdraw-chat] remote inbox failed:', supabaseErrorMessage(error));
-          return [];
-        }),
-        fileStore.buildAdminInbox(lastReadByTicket).catch((error) => {
-          console.error('[withdraw-chat] file inbox failed:', supabaseErrorMessage(error));
-          return [];
-        }),
-      ]);
-
-      const merged = new Map();
-      for (const item of [...fileItems, ...remoteItems]) {
-        const id = item?.ticket?.id;
-        if (!id) continue;
-        const existing = merged.get(id);
-        if (!existing || (item.ticket.updatedAt ?? 0) >= (existing.ticket.updatedAt ?? 0)) {
-          merged.set(id, {
-            ...item,
-            bundle: undefined,
-          });
-        }
-      }
-
-      return Array.from(merged.values())
-        .sort((a, b) => (b.ticket.updatedAt ?? 0) - (a.ticket.updatedAt ?? 0))
-        .slice(0, 60);
+      const tickets = (await this.listTickets({ openOnly: true })).slice(0, 60);
+      return tickets.map((ticket) => {
+        const storedRead = lastReadByTicket[ticket.id];
+        return {
+          ticket,
+          unreadCount: storedRead === undefined ? 1 : 0,
+          lastUserMessageAt: ticket.updatedAt ?? 0,
+          lastUserMessageText: null,
+          isUnseen: storedRead === undefined,
+        };
+      });
     },
   };
 }

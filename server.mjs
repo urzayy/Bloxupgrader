@@ -276,7 +276,7 @@ const withdrawChatStore = createWithdrawChatStore({ chatsDir: CHATS_DIR });
 console.log(`[withdraw-chat] using ${withdrawChatStore.type} store`);
 console.log(`[data] DATA_DIR=${DATA_DIR}`);
 
-async function cancelOpenTickets({ depositsOnly = false } = {}) {
+async function cancelOpenTickets({ depositsOnly = false, deleteTickets = true } = {}) {
   const tickets = await withdrawChatStore.listTickets({ openOnly: true });
   const targets = tickets.filter((ticket) => {
     const type = ticket.type ?? 'withdraw';
@@ -284,44 +284,70 @@ async function cancelOpenTickets({ depositsOnly = false } = {}) {
     return true;
   });
   let cancelled = 0;
-  const now = Date.now();
   const chunkSize = 8;
   for (let i = 0; i < targets.length; i += chunkSize) {
     const chunk = targets.slice(i, i + chunkSize);
     await Promise.all(chunk.map(async (ticket) => {
-      const bundle = await withdrawChatStore.loadBundle(ticket.id);
-      if (!bundle || bundle.ticket.status !== 'open') return;
-      bundle.ticket.status = 'cancelled';
-      bundle.ticket.updatedAt = now;
-      bundle.messages.push({
-        id: `msg_${now}_sys_${ticket.id}`,
-        ticketId: ticket.id,
-        senderId: 'system',
-        senderEmail: 'system@blox-upgrader',
-        senderRole: 'system',
-        senderLabel: 'System',
-        text: depositsOnly
-          ? 'Deposit request cancelled by administrator.'
-          : 'Chat closed by administrator.',
-        createdAt: now,
-      });
-      await withdrawChatStore.saveBundle(bundle);
-      cancelled += 1;
+      try {
+        if (deleteTickets && typeof withdrawChatStore.deleteBundle === 'function') {
+          await withdrawChatStore.deleteBundle(ticket.id);
+        } else {
+          const bundle = await withdrawChatStore.loadBundle(ticket.id);
+          if (!bundle || bundle.ticket.status !== 'open') return;
+          const now = Date.now();
+          bundle.ticket.status = 'cancelled';
+          bundle.ticket.updatedAt = now;
+          bundle.messages.push({
+            id: `msg_${now}_sys_${ticket.id}`,
+            ticketId: ticket.id,
+            senderId: 'system',
+            senderEmail: 'system@blox-upgrader',
+            senderRole: 'system',
+            senderLabel: 'System',
+            text: depositsOnly
+              ? 'Deposit request cancelled by administrator.'
+              : 'Chat closed by administrator.',
+            createdAt: now,
+          });
+          await withdrawChatStore.saveBundle(bundle);
+        }
+        cancelled += 1;
+      } catch (error) {
+        console.error('[withdraw-chat] close ticket failed:', ticket.id, error);
+      }
     }));
   }
   return cancelled;
 }
 
-// One-shot: cancel every open deposit after this deploy.
+async function purgeCancelledTickets() {
+  const tickets = await withdrawChatStore.listTickets({});
+  let purged = 0;
+  for (const ticket of tickets) {
+    if (ticket.status === 'open') continue;
+    try {
+      if (typeof withdrawChatStore.deleteBundle === 'function') {
+        await withdrawChatStore.deleteBundle(ticket.id);
+        purged += 1;
+      }
+    } catch (error) {
+      console.error('[withdraw-chat] purge failed:', ticket.id, error);
+    }
+  }
+  return purged;
+}
+
+// One-shot: cancel+delete open deposits, and purge already-cancelled tickets.
 try {
-  const markerPath = path.join(CHATS_DIR, '.cancel-all-deposits-v1');
+  const markerPath = path.join(CHATS_DIR, '.purge-closed-chats-v1');
   if (!fs.existsSync(markerPath)) {
-    const cancelled = await cancelOpenTickets({ depositsOnly: true });
-    fs.writeFileSync(markerPath, JSON.stringify({ at: Date.now(), cancelled }, null, 2), 'utf8');
-    console.log(`[withdraw-chat] cancelled ${cancelled} open deposit ticket(s)`);
+    const cancelled = await cancelOpenTickets({ depositsOnly: true, deleteTickets: true });
+    const purged = await purgeCancelledTickets();
+    fs.writeFileSync(markerPath, JSON.stringify({ at: Date.now(), cancelled, purged }, null, 2), 'utf8');
+    console.log(`[withdraw-chat] deleted ${cancelled} open deposit(s), purged ${purged} closed ticket(s)`);
   }
 } catch (error) {
-  console.error('[withdraw-chat] cancel deposits failed', error);
+  console.error('[withdraw-chat] purge closed chats failed', error);
 }
 
 if (durableJsonEnabled()) {
@@ -1815,8 +1841,9 @@ app.post('/api/withdraw/close-all', async (req, res) => {
   try {
     const session = await requireCreatorSession(req, res);
     if (!session) return;
-    const cancelled = await cancelOpenTickets({ depositsOnly: false });
-    sendJson(res, 200, { ok: true, cancelled });
+    const cancelled = await cancelOpenTickets({ depositsOnly: false, deleteTickets: true });
+    const purged = await purgeCancelledTickets();
+    sendJson(res, 200, { ok: true, cancelled, purged });
   } catch (error) {
     console.error('[withdraw-chat] close-all failed:', error);
     sendJson(res, 500, { error: 'failed to close chats' });
