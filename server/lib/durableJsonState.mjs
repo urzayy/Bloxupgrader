@@ -57,23 +57,28 @@ export async function loadJsonState(key) {
   if (!supabase) return null;
   const id = String(key || '').trim();
   if (!id) return null;
-  const signal = AbortSignal.timeout(LOAD_TIMEOUT_MS);
 
-  const primary = await supabase.from(TABLE).select('payload').eq('id', id).abortSignal(signal).maybeSingle();
-  if (!primary.error && primary.data?.payload != null) return primary.data.payload;
+  try {
+    const signal = AbortSignal.timeout(LOAD_TIMEOUT_MS);
+    const primary = await supabase.from(TABLE).select('payload').eq('id', id).abortSignal(signal).maybeSingle();
+    if (!primary.error && primary.data?.payload != null) return primary.data.payload;
 
-  const fallback = await supabase
-    .from(FALLBACK_TABLE)
-    .select('bundle')
-    .eq('id', jsonStateFallbackId(id))
-    .abortSignal(AbortSignal.timeout(LOAD_TIMEOUT_MS))
-    .maybeSingle();
-  if (!fallback.error && fallback.data?.bundle != null) return fallback.data.bundle;
+    const fallback = await supabase
+      .from(FALLBACK_TABLE)
+      .select('bundle')
+      .eq('id', jsonStateFallbackId(id))
+      .abortSignal(AbortSignal.timeout(LOAD_TIMEOUT_MS))
+      .maybeSingle();
+    if (!fallback.error && fallback.data?.bundle != null) return fallback.data.bundle;
 
-  if (primary.error && primary.error.code !== 'PGRST116') {
-    console.error('[durable-json] load', id, primary.error.message);
+    if (primary.error && primary.error.code !== 'PGRST116') {
+      console.error('[durable-json] load', id, primary.error.message);
+    }
+    return null;
+  } catch (error) {
+    console.error('[durable-json] load', id, error instanceof Error ? error.message : error);
+    return null;
   }
-  return null;
 }
 
 export async function saveJsonState(key, payload, { force = false } = {}) {
@@ -109,23 +114,27 @@ export async function saveJsonState(key, payload, { force = false } = {}) {
     }
   }
 
-  const now = Date.now();
-  const signal = AbortSignal.timeout(SAVE_TIMEOUT_MS);
-  const primary = await supabase.from(TABLE).upsert({
-    id,
-    payload,
-    updated_at: now,
-  }, { onConflict: 'id' }).abortSignal(signal);
-  if (!primary.error) return;
+  try {
+    const now = Date.now();
+    const signal = AbortSignal.timeout(SAVE_TIMEOUT_MS);
+    const primary = await supabase.from(TABLE).upsert({
+      id,
+      payload,
+      updated_at: now,
+    }, { onConflict: 'id' }).abortSignal(signal);
+    if (!primary.error) return;
 
-  const fallback = await supabase.from(FALLBACK_TABLE).upsert({
-    id: jsonStateFallbackId(id),
-    user_id: FALLBACK_USER,
-    bundle: payload,
-    updated_at: now,
-  }, { onConflict: 'id' }).abortSignal(AbortSignal.timeout(SAVE_TIMEOUT_MS));
-  if (fallback.error) {
-    console.error('[durable-json] save', id, primary.error?.message || fallback.error.message);
+    const fallback = await supabase.from(FALLBACK_TABLE).upsert({
+      id: jsonStateFallbackId(id),
+      user_id: FALLBACK_USER,
+      bundle: payload,
+      updated_at: now,
+    }, { onConflict: 'id' }).abortSignal(AbortSignal.timeout(SAVE_TIMEOUT_MS));
+    if (fallback.error) {
+      console.error('[durable-json] save', id, primary.error?.message || fallback.error.message);
+    }
+  } catch (error) {
+    console.error('[durable-json] save', id, error instanceof Error ? error.message : error);
   }
 }
 
@@ -252,6 +261,8 @@ export function attachDurableJson({ key, fileExisted, getState, setState, writeL
           return;
         }
         return saveJsonState(key, getState());
+      }).catch((error) => {
+        console.error('[durable-json] persist', key, error instanceof Error ? error.message : error);
       });
     }, 400);
     if (timer && typeof timer.unref === 'function') timer.unref();

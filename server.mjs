@@ -2270,5 +2270,17 @@ app.listen(PORT, '0.0.0.0', () => {
       logsDir: LOGS_DIR,
       accountResetsDir: ACCOUNT_RESETS_DIR,
     },
-  );
+  ).catch((error) => {
+    console.error('[reset] boot wipe rejected', error instanceof Error ? error.message : error);
+  });
+});
+
+// Supabase/network blips must not kill the Render process (causes 502 restart loops).
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error
+    ? reason.message
+    : (reason && typeof reason === 'object' && 'message' in reason)
+      ? String(reason.message)
+      : String(reason);
+  console.error('[process] unhandledRejection', message);
 });
