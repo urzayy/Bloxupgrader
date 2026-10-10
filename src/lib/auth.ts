@@ -315,13 +315,6 @@ export async function loginOrRegister(
   }
 
   if (existing) {
-    // Production APIs require a server session token. Never "succeed" locally without one.
-    if (!loadSessionToken()) {
-      return {
-        ok: false,
-        error: 'Could not reach the server to finish login. Wait a few seconds and try again.',
-      };
-    }
     const hash = await hashPassword(password, existing.salt);
     if (hash !== existing.passwordHash) {
       return { ok: false, error: 'Incorrect password.' };
@@ -330,12 +323,51 @@ export async function loginOrRegister(
     if (banStatus.banned) {
       return { ok: false, error: 'Account suspended.' };
     }
-    const session = sessionFromAccount(existing);
+
+    // Server may be empty after a disk wipe — re-seed account to mint a session token.
+    if (!loadSessionToken()) {
+      const registered = await registerAccountOnServer(existing);
+      if (registered === 'conflict') {
+        const retry = await requestServerSession(normalized, password);
+        if (retry.wrongPassword) {
+          return { ok: false, error: 'Incorrect password.' };
+        }
+        if (!retry.ok || !loadSessionToken()) {
+          return {
+            ok: false,
+            error: 'Could not reach the server to finish login. Wait a few seconds and try again.',
+          };
+        }
+        if (retry.user) {
+          await upsertLocalAccountFromCredentials(loadAccounts(), {
+            userId: retry.user.userId,
+            email: normalized,
+            password,
+            salt: retry.user.salt,
+            nickname: retry.user.nickname ?? existing.nickname,
+            acceptedAge: existing.acceptedAge,
+            acceptedTerms: existing.acceptedTerms,
+            avatarId: existing.avatarId,
+          });
+        }
+        if (retry.playerState) {
+          applyPlayerStateSnapshot(retry.user?.userId ?? existing.id, retry.playerState);
+        }
+      } else if (registered !== 'ok' || !loadSessionToken()) {
+        return {
+          ok: false,
+          error: 'Could not reach the server to finish login. Wait a few seconds and try again.',
+        };
+      }
+    }
+
+    const account = findAccountByEmail(normalized) ?? existing;
+    const session = sessionFromAccount(account);
     saveSession(session);
     void loginAccountOnServer({
-      userId: existing.id,
-      email: existing.email,
-      nickname: existing.nickname,
+      userId: account.id,
+      email: account.email,
+      nickname: account.nickname,
     });
     return { ok: true, session };
   }

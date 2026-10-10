@@ -792,14 +792,18 @@ app.post('/api/auth/register', async (req, res) => {
       sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
       return;
     }
-    // Never mint sessions for pinned admin emails via public register.
+    // Block hijacking of pinned admins only when the account already exists.
+    // After a disk wipe / empty store, admins must be able to re-seed via register.
     if (adminEmailsStore.isAdminEmail(normalizedEmail)) {
-      sendJson(res, 409, {
-        ok: false,
-        error: 'email_exists',
-        message: 'Esta cuenta ya existe. Inicia sesión.',
-      });
-      return;
+      const existingAdmin = await userStore.getAccountByEmail(normalizedEmail);
+      if (existingAdmin?.passwordHash) {
+        sendJson(res, 409, {
+          ok: false,
+          error: 'email_exists',
+          message: 'Esta cuenta ya existe. Inicia sesión.',
+        });
+        return;
+      }
     }
     const result = await userStore.registerAccount({
       userId,

@@ -24,7 +24,7 @@ function wrapSync(db, adminEmailsStore) {
     appendEvent: async (payload) => db.appendEvent(payload),
     listUsers: async () => db.listUsers(),
     listRegisteredEmails: async () => db.listRegisteredEmails(),
-    countAccounts: async () => db.listUsers().then(users => users.length),
+    countAccounts: async () => db.listUsers().length,
     getUser: async (userId) => db.getUser(userId),
     getUserEvents: async (userId, limit) => db.getUserEvents(userId, limit),
     exportUserTxt: async (userId) => db.exportUserTxt(userId),
@@ -113,6 +113,9 @@ export function createUserStore({ userDbDir, adminEmailsStore }) {
       return local;
     },
     authenticateAccount: async (payload) => {
+      // File store first — never wait on a dead/empty Supabase for login.
+      const local = await fileStore.authenticateAccount(payload);
+      if (local?.ok) return local;
       let remote = null;
       try {
         remote = await withTimeout(remoteStore.authenticateAccount(payload), 2500, () => null);
@@ -120,12 +123,10 @@ export function createUserStore({ userDbDir, adminEmailsStore }) {
         remote = null;
       }
       if (remote?.ok) return remote;
-      const local = await fileStore.authenticateAccount(payload);
-      if (local?.ok) return local;
-      if (remote?.wrongPassword || local?.wrongPassword) {
+      if (local?.wrongPassword || remote?.wrongPassword) {
         return { ok: false, wrongPassword: true };
       }
-      return remote ?? local ?? { ok: false, notFound: true };
+      return local ?? remote ?? { ok: false, notFound: true };
     },
     touchAccountLogin: async (payload) => {
       const local = await fileStore.touchAccountLogin(payload);
