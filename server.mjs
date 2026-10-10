@@ -681,12 +681,24 @@ app.use(rateLimitPaths(
     key: (req, ip) => `admin:${ip}`,
   },
 ));
+// Keep list polling and ticket creation in separate buckets so Live Chat
+// refreshes cannot block deposits / withdrawals.
 app.use(rateLimitPaths(
   ['/api/withdraw/tickets'],
   {
     windowMs: 60_000,
-    max: 60,
-    key: (req, ip) => `tickets:${ip}`,
+    max: 240,
+    methods: ['GET'],
+    key: (_req, ip) => `tickets:list:${ip}`,
+  },
+));
+app.use(rateLimitPaths(
+  ['/api/withdraw/tickets'],
+  {
+    windowMs: 60_000,
+    max: 30,
+    methods: ['POST'],
+    key: (_req, ip) => `tickets:create:${ip}`,
   },
 ));
 app.use(rateLimitPaths(
@@ -694,7 +706,7 @@ app.use(rateLimitPaths(
   {
     windowMs: 60_000,
     max: 120,
-    key: (req, ip) => `sync:${ip}`,
+    key: (_req, ip) => `sync:${ip}`,
   },
 ));
 app.use(rateLimitPaths(
@@ -707,12 +719,12 @@ app.use(rateLimitPaths(
   {
     windowMs: 60_000,
     max: 40,
-    key: (req, ip) => `game:${ip}`,
+    key: (_req, ip) => `game:${ip}`,
   },
 ));
 app.use('/api/', rateLimit({
   windowMs: 60_000,
-  max: 400,
+  max: 800,
   key: (_req, ip) => `api:${ip}`,
 }));
 

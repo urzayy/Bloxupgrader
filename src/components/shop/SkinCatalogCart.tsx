@@ -180,7 +180,7 @@ export function SkinCatalogCart({
     try {
       const result = await onSubmit(cartItems);
       if (result === false) {
-        setStatus({ type: 'err', text: 'Could not complete the action.' });
+        // Caller already surfaces a specific error (e.g. rate limit / validation).
         return;
       }
       clearCart();

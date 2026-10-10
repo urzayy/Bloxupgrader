@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatUsdDepositRateLabel } from '../../lib/cashDeposit';
 import { DEPOSIT_SKINS_ICON, ROBUX_DEPOSIT_ICON } from '../../lib/devRobuxDeposit';
 
 interface Props {
@@ -110,7 +111,7 @@ export function DepositMethodModal({ open, onClose, onSelectRobux, onSelectSkins
                     PayPal / Crypto
                   </span>
                   <p className="max-w-[180px] text-[10px] leading-snug text-white/40">
-                    Deposit via Discord ticket · 1$ = 3,000 balance
+                    Deposit via Discord ticket · {formatUsdDepositRateLabel()}
                   </p>
                 </div>
               </button>

@@ -31,7 +31,7 @@ export function LiveChatsInbox({ open, userId, onClose, onOpenTicket }: Props) {
       }
     };
     void load();
-    const id = setInterval(() => { void load(); }, 3000);
+    const id = setInterval(() => { void load(); }, 12_000);
     return () => clearInterval(id);
   }, [open, userId]);
 

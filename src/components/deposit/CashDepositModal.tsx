@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   calcUsdDepositCredit,
+  formatUsdDepositRateLabel,
   MIN_USD_DEPOSIT,
-  USD_TO_SALDO_RATE,
+  USD_DEPOSIT_PRESETS,
   validateUsdDepositAmount,
 } from '../../lib/cashDeposit';
 import { DISCORD_INVITE_URL } from '../../lib/discordUrl';
@@ -36,6 +37,12 @@ export function CashDepositModal({ open, onClose }: Props) {
     () => (usdAmount > 0 ? calcUsdDepositCredit(usdAmount) : 0),
     [usdAmount],
   );
+
+  const selectedPreset = useMemo(() => {
+    if (!amount.trim()) return null;
+    const match = USD_DEPOSIT_PRESETS.find(p => p === usdAmount);
+    return match ?? null;
+  }, [amount, usdAmount]);
 
   useEffect(() => {
     if (!open) {
@@ -106,7 +113,7 @@ export function CashDepositModal({ open, onClose }: Props) {
               How many dollars do you want to deposit?
             </p>
             <p className="mt-1 text-center text-[11px] font-semibold text-gold">
-              1$ = {USD_TO_SALDO_RATE.toLocaleString('en-US')} balance · Minimum ${MIN_USD_DEPOSIT}
+              {formatUsdDepositRateLabel()} · Minimum ${MIN_USD_DEPOSIT}
             </p>
             <p className="mt-3 rounded-lg border border-win/20 bg-win/5 px-3 py-2 text-center text-[11px] leading-relaxed text-white/70">
               To deposit with PayPal or crypto, go to our Discord and create a ticket.
@@ -124,30 +131,72 @@ export function CashDepositModal({ open, onClose }: Props) {
             </a>
 
             <form onSubmit={handleSubmit} className="mt-5 space-y-3">
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={MIN_USD_DEPOSIT}
-                  step={0.01}
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={e => {
-                    setAmount(e.target.value);
-                    setError('');
-                  }}
-                  placeholder="$"
-                  className="input-filter min-w-0 flex-1 text-center text-base"
-                />
-                {usdAmount > 0 && (
-                  <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gold/25 bg-gold/5 px-2.5 py-2">
-                    <span className="text-[10px] font-bold uppercase text-white/40">=</span>
-                    <CoinPrice
-                      value={creditTotal}
-                      iconClassName="h-3.5 w-3.5"
-                      textClassName="font-display text-sm font-bold text-gold"
-                    />
-                  </div>
-                )}
+              <div className="grid grid-cols-3 gap-2">
+                {USD_DEPOSIT_PRESETS.map(usd => {
+                  const credit = calcUsdDepositCredit(usd);
+                  const active = selectedPreset === usd;
+                  return (
+                    <button
+                      key={usd}
+                      type="button"
+                      onClick={() => {
+                        setAmount(String(usd));
+                        setError('');
+                      }}
+                      className={`rounded-xl border px-2 py-2.5 transition ${
+                        active
+                          ? 'border-win/55 bg-win/15 shadow-[0_0_16px_rgba(52,211,153,0.18)]'
+                          : 'border-win/20 bg-black/25 hover:border-win/40 hover:bg-win/10'
+                      }`}
+                    >
+                      <span className="block font-display text-sm font-black text-win">
+                        {usd}$
+                      </span>
+                      <span className="mt-1 flex items-center justify-center gap-1">
+                        <CoinPrice
+                          value={credit}
+                          iconClassName="h-3 w-3"
+                          textClassName="text-[11px] font-bold text-gold"
+                        />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="cash-deposit-custom"
+                  className="mb-1.5 block text-center text-[10px] font-bold uppercase tracking-wide text-white/40"
+                >
+                  Custom amount
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="cash-deposit-custom"
+                    type="number"
+                    min={MIN_USD_DEPOSIT}
+                    step={0.01}
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={e => {
+                      setAmount(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="$"
+                    className="input-filter min-w-0 flex-1 text-center text-base"
+                  />
+                  {usdAmount > 0 && (
+                    <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gold/25 bg-gold/5 px-2.5 py-2">
+                      <span className="text-[10px] font-bold uppercase text-white/40">=</span>
+                      <CoinPrice
+                        value={creditTotal}
+                        iconClassName="h-3.5 w-3.5"
+                        textClassName="font-display text-sm font-bold text-gold"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               {error && (

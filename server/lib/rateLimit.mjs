@@ -13,10 +13,24 @@ function prune(now) {
 }
 
 /**
- * @param {{ windowMs?: number, max?: number, key?: (req) => string }} opts
+ * @param {{
+ *   windowMs?: number,
+ *   max?: number,
+ *   key?: (req: unknown, ip: string) => string,
+ *   methods?: string[],
+ * }} opts
  */
-export function rateLimit({ windowMs = 60_000, max = 30, key } = {}) {
+export function rateLimit({ windowMs = 60_000, max = 30, key, methods } = {}) {
+  const methodSet = Array.isArray(methods) && methods.length
+    ? new Set(methods.map(m => String(m).toUpperCase()))
+    : null;
+
   return (req, res, next) => {
+    if (methodSet && !methodSet.has(String(req.method || '').toUpperCase())) {
+      next();
+      return;
+    }
+
     const now = Date.now();
     prune(now);
     const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
@@ -46,7 +60,7 @@ export function rateLimitPaths(paths, opts) {
   const limiter = rateLimit(opts);
   const set = new Set(paths);
   return (req, res, next) => {
-    const url = String(req.url || '').split('?')[0];
+    const url = String(req.originalUrl || req.url || '').split('?')[0];
     if (set.has(url)) return limiter(req, res, next);
     return next();
   };
