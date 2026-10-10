@@ -1,5 +1,5 @@
 import { loginAccountOnServer, registerAccountOnServer, requestServerSession } from './userDbApi';
-import { clearSessionToken } from './sessionToken';
+import { clearSessionToken, loadSessionToken } from './sessionToken';
 import { fetchAccountBanStatus } from './accountBanApi';
 import { applyPlayerStateSnapshot } from './playerStateHydration';
 import {
@@ -315,6 +315,13 @@ export async function loginOrRegister(
   }
 
   if (existing) {
+    // Production APIs require a server session token. Never "succeed" locally without one.
+    if (!loadSessionToken()) {
+      return {
+        ok: false,
+        error: 'Could not reach the server to finish login. Wait a few seconds and try again.',
+      };
+    }
     const hash = await hashPassword(password, existing.salt);
     if (hash !== existing.passwordHash) {
       return { ok: false, error: 'Incorrect password.' };
@@ -334,7 +341,13 @@ export async function loginOrRegister(
   }
 
   const serverUnreachable = !serverSession.ok && !serverSession.notFound && !serverSession.wrongPassword;
-  if (!serverSession.notFound && !serverUnreachable) {
+  if (serverUnreachable) {
+    return {
+      ok: false,
+      error: 'Could not reach the server to finish login. Wait a few seconds and try again.',
+    };
+  }
+  if (!serverSession.notFound) {
     return { ok: false, error: 'Could not log in. Please try again.' };
   }
 
@@ -363,10 +376,23 @@ export async function loginOrRegister(
     avatarId: pickRandomAvatarId(),
   };
 
+  const registered = await registerAccountOnServer(account);
+  if (registered !== 'ok' && registered !== 'conflict') {
+    return {
+      ok: false,
+      error: 'Could not create your account on the server. Try again in a moment.',
+    };
+  }
+  if (!loadSessionToken()) {
+    return {
+      ok: false,
+      error: 'Could not finish login on the server. Try again in a moment.',
+    };
+  }
+
   saveAccounts([...accounts, account]);
   const session = sessionFromAccount(account);
   saveSession(session);
-  await registerAccountOnServer(account);
   return { ok: true, session, isNewAccount: true };
 }
 

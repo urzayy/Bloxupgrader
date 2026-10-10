@@ -852,8 +852,12 @@ app.post('/api/auth/session', async (req, res) => {
     }
     const auth = await Promise.race([
       userStore.authenticateAccount({ email: normalizedEmail, password }),
-      new Promise(resolve => setTimeout(() => resolve({ ok: false, notFound: true }), 3000)),
+      new Promise(resolve => setTimeout(() => resolve({ ok: false, timeout: true }), 12_000)),
     ]);
+    if (auth.timeout) {
+      finish(503, { ok: false, error: 'auth_timeout', message: 'Login timed out. Try again.' });
+      return;
+    }
     if (auth.notFound) {
       finish(404, { ok: false, notFound: true });
       return;

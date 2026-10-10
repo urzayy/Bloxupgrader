@@ -66,7 +66,7 @@ export async function requestServerSession(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(20_000),
     });
     const data = await res.json().catch(() => ({})) as {
       ok?: boolean;
@@ -81,6 +81,9 @@ export async function requestServerSession(
     }
     if (res.status === 401 || data.error === 'wrong_password') {
       return { ok: false, wrongPassword: true };
+    }
+    if (res.status === 503 || data.error === 'auth_timeout') {
+      return { ok: false };
     }
     if (!res.ok || !data.ok || !data.user?.userId) {
       return { ok: false };
