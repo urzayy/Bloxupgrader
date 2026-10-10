@@ -9,7 +9,6 @@ import { clearAccountByEmail as resetAccountByEmail } from './server/lib/account
 import { createAccountResetMarkerStore } from './server/lib/accountResetMarker.mjs';
 import { createAccountBanStore } from './server/lib/accountBanStore.mjs';
 import { createProfilePhotoStore } from './server/lib/profilePhotoStore.mjs';
-import { shouldSkipEmptyPlayerStateOverwrite, clampSyncedBalance, clampSyncedInventory, normalizeInventory } from './server/lib/playerStateSyncGuard.mjs';
 import { createSessionToken, requireAdmin, requireBoundUser, sendJson } from './server/lib/httpAuth.mjs';
 
 dotenv.config();
@@ -210,102 +209,12 @@ export function userDbPlugin(dbDir: string, stateDir?: string): Plugin {
           }
 
           if (url === '/api/player-state/sync' && req.method === 'POST') {
-            const body = await readJsonBody(req) as {
-              email?: string;
-              balance?: number;
-              inventory?: unknown;
-              resetAck?: number;
-            };
-            if (!body.email) {
-              sendJson(res, 400, { error: 'bad request' });
-              return;
-            }
-            const normalizedEmail = String(body.email).trim().toLowerCase();
-            const session = await requireBoundUser(req, res, userStore, { email: normalizedEmail });
-            if (!session) return;
-            if (banStore.isBanned(normalizedEmail)) {
-              sendJson(res, 403, { error: 'account_suspended', message: 'Cuenta suspendida.' });
-              return;
-            }
-            const userId = session.userId;
-            const pendingResetAt = resetMarkerStore.getResetAt(normalizedEmail);
-
-            if (pendingResetAt && Number(body.resetAck) !== pendingResetAt) {
-              const state = await playerStateStore.savePlayerState({
-                userId,
-                email: normalizedEmail,
-                balance: 0,
-                inventory: [],
-              });
-              sendJson(res, 200, { ok: true, forceReset: true, resetAt: pendingResetAt, state });
-              return;
-            }
-
-            if (pendingResetAt && Number(body.resetAck) === pendingResetAt) {
-              resetMarkerStore.clearReset(normalizedEmail, pendingResetAt);
-            }
-
-            const existing = await playerStateStore.getPlayerStateByEmail(normalizedEmail);
-            if (shouldSkipEmptyPlayerStateOverwrite(existing, body.balance, body.inventory)) {
-              sendJson(res, 200, { ok: true, state: existing, skippedEmptyOverwrite: true });
-              return;
-            }
-
-            let pendingGrants = 0;
-            try {
-              const grantFile = path.join(balanceGrantsDir, `${normalizedEmail.replace(/@/g, '_at_').replace(/[^a-zA-Z0-9._-]/g, '_')}.json`);
-              if (fs.existsSync(grantFile)) {
-                const parsed = JSON.parse(fs.readFileSync(grantFile, 'utf8'));
-                pendingGrants = (parsed?.grants ?? [])
-                  .filter((grant: { status?: string }) => grant.status === 'pending')
-                  .reduce((sum: number, grant: { amount?: number }) => sum + Math.max(0, Math.floor(Number(grant.amount) || 0)), 0);
-              }
-            } catch {
-              pendingGrants = 0;
-            }
-
-            let pendingInventoryGrantValue = 0;
-            try {
-              const invGrantFile = path.join(grantsDir, `${normalizedEmail.replace(/@/g, '_at_').replace(/[^a-zA-Z0-9._-]/g, '_')}.json`);
-              if (fs.existsSync(invGrantFile)) {
-                const parsed = JSON.parse(fs.readFileSync(invGrantFile, 'utf8'));
-                pendingInventoryGrantValue = (parsed?.grants ?? [])
-                  .filter((grant: { status?: string }) => grant.status === 'pending')
-                  .reduce((sum: number, grant: { skin?: { price?: number }; quantity?: number }) => {
-                    const unit = Math.max(0, Math.floor(Number(grant?.skin?.price) || 0));
-                    const qty = Math.max(1, Math.floor(Number(grant?.quantity) || 1));
-                    return sum + unit * qty;
-                  }, 0);
-              }
-            } catch {
-              pendingInventoryGrantValue = 0;
-            }
-
-            const { nextBalance, blocked } = clampSyncedBalance(
-              existing?.balance,
-              body.balance,
-              pendingGrants,
-            );
-            if (blocked) {
-              console.warn(`[security] blocked balance inflate email=${normalizedEmail}`);
-            }
-
-            const invClamp = clampSyncedInventory(
-              existing?.inventory,
-              body.inventory,
-              pendingInventoryGrantValue,
-            );
-            if (invClamp.blocked) {
-              console.warn(`[security] blocked inventory inflate email=${normalizedEmail}`);
-            }
-
-            const state = await playerStateStore.savePlayerState({
-              userId,
-              email: normalizedEmail,
-              balance: nextBalance,
-              inventory: invClamp.inventory,
+            // Closed: client-trusted balance/inventory sync was the inflate vector.
+            sendJson(res, 410, {
+              ok: false,
+              error: 'sync_disabled',
+              message: 'Player state sync is disabled.',
             });
-            sendJson(res, 200, { ok: true, state });
             return;
           }
 
