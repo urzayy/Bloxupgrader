@@ -8,6 +8,7 @@ import {
   type SupportTicketType,
   type WithdrawTicket,
 } from '../../lib/withdrawChat';
+import { peekUserTicketsCache } from '../../lib/userTicketsCache';
 
 interface Props {
   open: boolean;
@@ -18,22 +19,36 @@ interface Props {
 }
 
 export function LiveChatsInbox({ open, userId, userEmail, onClose, onOpenTicket }: Props) {
-  const [tickets, setTickets] = useState<WithdrawTicket[]>([]);
+  const [tickets, setTickets] = useState<WithdrawTicket[]>(
+    () => peekUserTicketsCache(userId) ?? [],
+  );
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open || !userId) return;
+    const cached = peekUserTicketsCache(userId);
+    if (cached?.length) setTickets(cached);
+
+    let cancelled = false;
     const load = async () => {
       try {
-        setTickets(await fetchUserWithdrawTickets(userId, userEmail));
-        setError('');
+        const next = await fetchUserWithdrawTickets(userId, userEmail);
+        if (!cancelled) {
+          setTickets(next);
+          setError('');
+        }
       } catch {
-        setError('Could not load your chats.');
+        if (!cancelled && !(peekUserTicketsCache(userId)?.length)) {
+          setError('Could not load your chats.');
+        }
       }
     };
     void load();
     const id = setInterval(() => { void load(); }, 12_000);
-    return () => clearInterval(id);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [open, userId, userEmail]);
 
   return (

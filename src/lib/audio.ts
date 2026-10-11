@@ -497,6 +497,47 @@ function select() {
   punchTone(1174.66, 0.12, 0.15 * VOL, 0.05, 'sine', 7000);
 }
 
+/** Loud desk-bell "tilín" for admins — bypasses master ducking so it cuts through. */
+function adminChatBell() {
+  try {
+    const c = ac();
+    const ring = (when: number, freq: number, vol: number) => {
+      const t = c.currentTime + when;
+      const o = c.createOscillator();
+      const g = c.createGain();
+      const lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 9000;
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq, t);
+      o.frequency.exponentialRampToValueAtTime(freq * 0.92, t + 0.55);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      o.connect(lp);
+      lp.connect(g);
+      g.connect(c.destination);
+      o.start(t);
+      o.stop(t + 0.75);
+    };
+
+    // Triple tilín, then a second burst so it is hard to miss.
+    const burst = (offset: number) => {
+      ring(offset + 0, 2093.0, 0.95);
+      ring(offset + 0.16, 2637.0, 0.9);
+      ring(offset + 0.32, 3136.0, 0.85);
+    };
+    burst(0);
+    burst(0.85);
+  } catch { /* noop */ }
+}
+
+export function unlockAdminAlertAudio() {
+  try {
+    ac();
+  } catch { /* noop */ }
+}
+
 export const WHEEL_DEG_PER_TICK = 360 / 48;
 
 export const sfx = {
@@ -513,6 +554,7 @@ export const sfx = {
   win,
   lose,
   select,
+  adminChatBell,
 };
 
 export class WheelSpinAudio {

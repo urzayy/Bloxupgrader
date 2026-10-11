@@ -6,6 +6,7 @@ import { getAdminLastReadMap } from './adminChatRead';
 import { calcRobuxDepositCredit } from './robuxDeposit';
 import { rememberLiveChatTicket, rememberedLiveChatTicketIds } from './liveChatMemory';
 import { clearSessionToken, sessionAuthHeaders, withSessionToken } from './sessionToken';
+import { setUserTicketsCache } from './userTicketsCache';
 
 export type SupportTicketType = 'withdraw' | 'deposit' | 'help';
 export type WithdrawTicketStatus = 'open' | 'completed' | 'cancelled';
@@ -118,13 +119,14 @@ function summarizeSkin(skin: Skin): WithdrawSkinSummary {
   };
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
+async function api<T>(path: string, init?: RequestInit, timeoutMs = 8_000): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: sessionAuthHeaders({
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
     }),
+    signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -238,29 +240,38 @@ export async function fetchUserWithdrawTickets(
 ): Promise<WithdrawTicket[]> {
   const data = await api<{ tickets: WithdrawTicket[] }>(
     `/api/withdraw/tickets?userId=${encodeURIComponent(userId)}`,
+    undefined,
+    5_000,
   );
-  const tickets = [...(data.tickets ?? [])];
-  const byId = new Map(tickets.map(ticket => [ticket.id, ticket]));
-
-  // Recover chats remembered in this browser after tab close / userId rematch.
-  for (const id of rememberedLiveChatTicketIds(email ?? '')) {
-    if (byId.has(id)) continue;
-    try {
-      const bundle = await fetchWithdrawTicket(id);
-      if (bundle?.ticket) {
-        byId.set(bundle.ticket.id, bundle.ticket);
-        if (email) rememberLiveChatTicket(email, bundle.ticket.id);
-      }
-    } catch {
-      /* ticket gone or not owned */
-    }
-  }
+  const byId = new Map((data.tickets ?? []).map(ticket => [ticket.id, ticket]));
 
   for (const ticket of byId.values()) {
     if (email && ticket.id) rememberLiveChatTicket(email, ticket.id);
   }
 
-  return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  // Recover missing remembered chats in parallel (never block the inbox for seconds).
+  const missing = rememberedLiveChatTicketIds(email ?? '').filter(id => !byId.has(id)).slice(0, 8);
+  if (missing.length) {
+    const recovered = await Promise.allSettled(
+      missing.map(async id => {
+        const bundle = await api<WithdrawTicketBundle>(
+          `/api/withdraw/tickets/${encodeURIComponent(id)}`,
+          undefined,
+          1_800,
+        );
+        return bundle.ticket;
+      }),
+    );
+    for (const result of recovered) {
+      if (result.status !== 'fulfilled' || !result.value?.id) continue;
+      byId.set(result.value.id, result.value);
+      if (email) rememberLiveChatTicket(email, result.value.id);
+    }
+  }
+
+  const tickets = [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  setUserTicketsCache(userId, tickets);
+  return tickets;
 }
 
 export async function fetchAdminWithdrawTickets(openOnly = true): Promise<WithdrawTicket[]> {
