@@ -119,24 +119,49 @@ export function withdrawChatPlugin(
       };
 
       const saveBundle = (bundle: TicketBundle) => {
-        fs.writeFileSync(ticketPath(bundle.ticket.id), JSON.stringify(bundle, null, 2), 'utf8');
+        fs.writeFileSync(ticketPath(bundle.ticket.id), JSON.stringify(bundle), 'utf8');
+        ticketListCache = null;
       };
 
-      const listTickets = (filter?: { userId?: string; openOnly?: boolean }): WithdrawTicket[] => {
-        const files = fs.readdirSync(chatsDir).filter(f => f.endsWith('.json'));
-        const tickets: WithdrawTicket[] = [];
-        for (const file of files) {
-          try {
-            const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, file), 'utf8')) as TicketBundle;
-            if (!bundle?.ticket) continue;
-            if (filter?.userId && bundle.ticket.userId !== filter.userId) continue;
-            if (filter?.openOnly && bundle.ticket.status !== 'open') continue;
-            tickets.push(bundle.ticket);
-          } catch {
-            /* skip corrupt file */
+      let ticketListCache: { at: number; tickets: WithdrawTicket[] } | null = null;
+      const TICKET_LIST_TTL_MS = 5_000;
+
+      const listTickets = (filter?: {
+        userId?: string;
+        userEmail?: string;
+        openOnly?: boolean;
+      }): WithdrawTicket[] => {
+        const now = Date.now();
+        if (!ticketListCache || now - ticketListCache.at > TICKET_LIST_TTL_MS) {
+          const files = fs.readdirSync(chatsDir).filter(f => f.endsWith('.json'));
+          const tickets: WithdrawTicket[] = [];
+          for (const file of files) {
+            try {
+              const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, file), 'utf8')) as TicketBundle;
+              if (!bundle?.ticket) continue;
+              tickets.push(bundle.ticket);
+            } catch {
+              /* skip corrupt file */
+            }
           }
+          ticketListCache = {
+            at: now,
+            tickets: tickets.sort((a, b) => b.updatedAt - a.updatedAt),
+          };
         }
-        return tickets.sort((a, b) => b.updatedAt - a.updatedAt);
+
+        const wantId = filter?.userId ? String(filter.userId) : '';
+        const wantEmail = String(filter?.userEmail || '').trim().toLowerCase();
+        return ticketListCache.tickets.filter(ticket => {
+          if (wantId || wantEmail) {
+            const matchId = wantId && String(ticket.userId || '') === wantId;
+            const matchEmail = wantEmail
+              && String(ticket.userEmail || '').trim().toLowerCase() === wantEmail;
+            if (!matchId && !matchEmail) return false;
+          }
+          if (filter?.openOnly && ticket.status !== 'open') return false;
+          return true;
+        });
       };
 
       const countUnreadUserMessages = (messages: ChatMessage[], lastReadAt: number) =>
@@ -221,7 +246,22 @@ export function withdrawChatPlugin(
             }
             const session = await requireBoundUser(req, res, userStore);
             if (!session) return;
-            sendJson(res, 200, { tickets: listTickets({ userId: session.userId }) });
+            const tickets = listTickets({
+              userId: session.userId,
+              userEmail: session.email,
+            });
+            for (const ticket of tickets) {
+              if (String(ticket.userId || '') === String(session.userId)) continue;
+              if (String(ticket.userEmail || '').trim().toLowerCase() !== session.email) continue;
+              const bundle = loadBundle(ticket.id);
+              if (!bundle) continue;
+              bundle.ticket.userId = session.userId;
+              bundle.ticket.userEmail = session.email;
+              bundle.ticket.updatedAt = Date.now();
+              saveBundle(bundle);
+              ticket.userId = session.userId;
+            }
+            sendJson(res, 200, { tickets });
             return;
           }
 
@@ -238,10 +278,18 @@ export function withdrawChatPlugin(
                 return;
               }
               const isAdmin = adminEmailsStore.isAdminEmail(session.email);
-              const ownerId = String(bundle.ticket.userId ?? '');
-              if (!isAdmin && ownerId && ownerId !== session.userId) {
+              const ticketEmail = String(bundle.ticket.userEmail ?? '').trim().toLowerCase();
+              const ownsTicket = session.email === ticketEmail
+                || String(session.userId) === String(bundle.ticket.userId);
+              if (!isAdmin && !ownsTicket) {
                 sendJson(res, 403, { error: 'forbidden', message: 'Not your ticket.' });
                 return;
+              }
+              if (!isAdmin && String(bundle.ticket.userId) !== String(session.userId) && session.email === ticketEmail) {
+                bundle.ticket.userId = session.userId;
+                bundle.ticket.userEmail = session.email;
+                bundle.ticket.updatedAt = Date.now();
+                saveBundle(bundle);
               }
               sendJson(res, 200, bundle);
               return;

@@ -514,11 +514,19 @@ function saveBundleSync(bundle) {
 function listTicketsSync(filter) {
   const files = fs.readdirSync(CHATS_DIR).filter(f => f.endsWith('.json'));
   const tickets = [];
+  const wantId = filter?.userId ? String(filter.userId) : '';
+  const wantEmail = String(filter?.userEmail || '').trim().toLowerCase();
   for (const file of files) {
     try {
       const bundle = JSON.parse(fs.readFileSync(path.join(CHATS_DIR, file), 'utf8'));
       if (!bundle?.ticket) continue;
-      if (filter?.userId && bundle.ticket.userId !== filter.userId) continue;
+      if (wantId || wantEmail) {
+        const ticketId = String(bundle.ticket.userId || '');
+        const ticketEmail = String(bundle.ticket.userEmail || '').trim().toLowerCase();
+        const matchId = wantId && ticketId === wantId;
+        const matchEmail = wantEmail && ticketEmail === wantEmail;
+        if (!matchId && !matchEmail) continue;
+      }
       if (filter?.openOnly && bundle.ticket.status !== 'open') continue;
       tickets.push(bundle.ticket);
     } catch {
@@ -526,6 +534,32 @@ function listTicketsSync(filter) {
     }
   }
   return tickets.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function ticketOwnedBySession(ticket, session) {
+  if (!ticket || !session) return false;
+  if (String(ticket.userId || '') === String(session.userId || '')) return true;
+  const ticketEmail = String(ticket.userEmail || '').trim().toLowerCase();
+  const sessionEmail = String(session.email || '').trim().toLowerCase();
+  return Boolean(ticketEmail && sessionEmail && ticketEmail === sessionEmail);
+}
+
+async function healTicketOwner(bundle, session) {
+  if (!bundle?.ticket || !session?.userId) return bundle;
+  const ticket = bundle.ticket;
+  const sameEmail = String(ticket.userEmail || '').trim().toLowerCase()
+    === String(session.email || '').trim().toLowerCase();
+  if (!sameEmail) return bundle;
+  if (String(ticket.userId || '') === String(session.userId)) return bundle;
+  ticket.userId = session.userId;
+  ticket.userEmail = session.email;
+  ticket.updatedAt = Date.now();
+  try {
+    await withdrawChatStore.saveBundle(bundle);
+  } catch (error) {
+    console.error('[withdraw-chat] heal owner failed:', error);
+  }
+  return bundle;
 }
 
 function buildAdminInboxSync(lastReadByTicket = {}) {
@@ -1836,7 +1870,23 @@ app.get('/api/withdraw/tickets', async (req, res) => {
         sendJson(res, 403, { error: 'forbidden', message: 'Session mismatch.' });
         return;
       }
-      tickets = await withdrawChatStore.listTickets({ userId: session.userId });
+      // Match by email too — after re-login/re-seed the local userId may change
+      // while open deposit/withdraw tickets still have the previous id.
+      tickets = await withdrawChatStore.listTickets({
+        userId: session.userId,
+        userEmail: session.email,
+      });
+      // Heal stale owner ids so future lookups by userId keep working.
+      for (const ticket of tickets) {
+        if (String(ticket.userId || '') === String(session.userId)) continue;
+        if (String(ticket.userEmail || '').trim().toLowerCase() !== String(session.email || '').trim().toLowerCase()) {
+          continue;
+        }
+        void withdrawChatStore.loadBundle(ticket.id).then(async (bundle) => {
+          if (bundle) await healTicketOwner(bundle, session);
+        }).catch(() => {});
+        ticket.userId = session.userId;
+      }
     }
     sendJson(res, 200, { tickets });
   } catch (error) {
@@ -1874,16 +1924,18 @@ app.get('/api/withdraw/tickets/:ticketId', async (req, res) => {
   try {
     const session = requireUserSession(req, res);
     if (!session) return;
-    const bundle = await withdrawChatStore.loadBundle(req.params.ticketId);
+    let bundle = await withdrawChatStore.loadBundle(req.params.ticketId);
     if (!bundle) {
       sendJson(res, 404, { error: 'not found' });
       return;
     }
     const isAdmin = adminEmailsStore.isAdminEmail(session.email);
-    const ownerId = String(bundle.ticket?.userId ?? '');
-    if (!isAdmin && ownerId && ownerId !== session.userId) {
+    if (!isAdmin && !ticketOwnedBySession(bundle.ticket, session)) {
       sendJson(res, 403, { error: 'forbidden', message: 'Not your ticket.' });
       return;
+    }
+    if (!isAdmin) {
+      bundle = await healTicketOwner(bundle, session);
     }
     sendJson(res, 200, bundle);
   } catch (error) {
@@ -1896,7 +1948,7 @@ app.post('/api/withdraw/tickets/:ticketId/messages', async (req, res) => {
   try {
     const session = requireUserSession(req, res);
     if (!session) return;
-    const bundle = await withdrawChatStore.loadBundle(req.params.ticketId);
+    let bundle = await withdrawChatStore.loadBundle(req.params.ticketId);
     if (!bundle) {
       sendJson(res, 404, { error: 'not found' });
       return;
@@ -1907,11 +1959,13 @@ app.post('/api/withdraw/tickets/:ticketId/messages', async (req, res) => {
       return;
     }
 
-    const ticketOwnerId = String(bundle.ticket?.userId ?? '');
     const isAdminSender = adminEmailsStore.isAdminEmail(session.email);
-    if (!isAdminSender && ticketOwnerId && ticketOwnerId !== session.userId) {
+    if (!isAdminSender && !ticketOwnedBySession(bundle.ticket, session)) {
       sendJson(res, 403, { error: 'forbidden', message: 'Not your ticket.' });
       return;
+    }
+    if (!isAdminSender) {
+      bundle = await healTicketOwner(bundle, session);
     }
 
     const now = Date.now();

@@ -33,6 +33,21 @@ function buildInboxItems(tickets, loadBundle, lastReadByTicket = {}, { includeBu
   });
 }
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+/** Match tickets by session userId and/or email (userId can change after re-login/re-seed). */
+function ticketMatchesOwner(ticket, filter) {
+  if (!ticket) return false;
+  const wantId = filter?.userId ? String(filter.userId) : '';
+  const wantEmail = normalizeEmail(filter?.userEmail);
+  if (!wantId && !wantEmail) return true;
+  if (wantId && String(ticket.userId || '') === wantId) return true;
+  if (wantEmail && normalizeEmail(ticket.userEmail) === wantEmail) return true;
+  return false;
+}
+
 async function mergeTicketLists(remoteStore, fileStore, filter) {
   const ticketMap = new Map();
   const addTickets = (tickets) => {
@@ -46,7 +61,7 @@ async function mergeTicketLists(remoteStore, fileStore, filter) {
   };
 
   // Merge full lists first so a cancelled copy on one side wins over a stale "open" on the other.
-  const baseFilter = { userId: filter?.userId };
+  const baseFilter = { userId: filter?.userId, userEmail: filter?.userEmail };
   try {
     addTickets(await remoteStore.listTickets(baseFilter));
   } catch (error) {
@@ -60,6 +75,9 @@ async function mergeTicketLists(remoteStore, fileStore, filter) {
   }
 
   let tickets = Array.from(ticketMap.values());
+  if (filter?.userId || filter?.userEmail) {
+    tickets = tickets.filter(ticket => ticketMatchesOwner(ticket, filter));
+  }
   if (filter?.openOnly) {
     tickets = tickets.filter(ticket => ticket.status === 'open');
   }
@@ -117,7 +135,9 @@ export function createFileWithdrawChatStore(chatsDir) {
         ticketIndex = files;
       }
       let tickets = files;
-      if (filter?.userId) tickets = tickets.filter(ticket => ticket.userId === filter.userId);
+      if (filter?.userId || filter?.userEmail) {
+        tickets = tickets.filter(ticket => ticketMatchesOwner(ticket, filter));
+      }
       if (filter?.openOnly) tickets = tickets.filter(ticket => ticket.status === 'open');
       return tickets.sort((a, b) => b.updatedAt - a.updatedAt);
     },
@@ -133,11 +153,18 @@ export function createSupabaseWithdrawChatStore(url, secretKey) {
 
   async function listBundles(filter) {
     let query = supabase.from('blox_withdraw_chats').select('bundle');
-    if (filter?.userId) query = query.eq('user_id', filter.userId);
-    else query = query.order('updated_at', { ascending: false }).limit(filter?.openOnly ? 60 : 120);
+    // When email is provided, scan recent rows so re-seeded accounts still find old tickets.
+    if (filter?.userId && !filter?.userEmail) {
+      query = query.eq('user_id', filter.userId);
+    } else {
+      query = query.order('updated_at', { ascending: false }).limit(filter?.userEmail ? 400 : (filter?.openOnly ? 60 : 120));
+    }
     const { data, error } = await query;
     if (error) throw error;
     let bundles = (data ?? []).map(row => row.bundle).filter(Boolean);
+    if (filter?.userId || filter?.userEmail) {
+      bundles = bundles.filter(bundle => ticketMatchesOwner(bundle?.ticket, filter));
+    }
     if (filter?.openOnly) {
       bundles = bundles.filter(bundle => bundle.ticket?.status === 'open');
     }
