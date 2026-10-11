@@ -1,1 +1,1 @@
-export const DISCORD_INVITE_URL = 'https://discord.gg/qJfQHUDf8T';
+export const DISCORD_INVITE_URL = 'https://discord.gg/bloxupgrader';
