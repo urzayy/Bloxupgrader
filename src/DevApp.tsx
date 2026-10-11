@@ -148,7 +148,7 @@ export default function DevApp() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [totalUpgrades, setTotalUpgrades] = useState(BASE_TOTAL_UPGRADES);
   const [playersOnline, setPlayersOnline] = useState(650);
-  const [registeredUsers, setRegisteredUsers] = useState(0);
+  const [registeredUsers, setRegisteredUsers] = useState(7_539);
   const [turbo, setTurbo] = useState(false);
   const [lockedSkinIds, setLockedSkinIds] = useState<Set<string>>(() => new Set());
   const [playerStateHydrated, setPlayerStateHydrated] = useState(() => !user);

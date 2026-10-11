@@ -86,9 +86,12 @@ const STATE_FILE = path.join(STATE_DIR, 'state.json');
 const PORT = Number(process.env.PORT) || 4173;
 const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
 const BASE_TOTAL_UPGRADES = 13_200;
+/** Display floor for footer "users registered" (never show below this). */
+const BASE_REGISTERED_USERS = 7_539;
 const MIN_DEPOSIT_TOTAL = 500;
 const MIN_WITHDRAW_TOTAL = 20;
 const MAX_DEPOSIT_SKINS = 5_000;
+const REGISTERED_USERS_FILE = path.join(STATE_DIR, 'registered-users.json');
 
 function expandTicketSkins(rawSkins, maxUnits = MAX_DEPOSIT_SKINS) {
   const out = [];
@@ -403,12 +406,41 @@ function isFeedItem(value) {
   );
 }
 
+function readRegisteredUsersHighWater() {
+  try {
+    if (!fs.existsSync(REGISTERED_USERS_FILE)) return BASE_REGISTERED_USERS;
+    const parsed = JSON.parse(fs.readFileSync(REGISTERED_USERS_FILE, 'utf8'));
+    const count = Math.floor(Number(parsed?.count) || 0);
+    return Math.max(BASE_REGISTERED_USERS, count);
+  } catch {
+    return BASE_REGISTERED_USERS;
+  }
+}
+
+function writeRegisteredUsersHighWater(count) {
+  const next = Math.max(BASE_REGISTERED_USERS, Math.floor(Number(count) || 0));
+  fs.writeFileSync(
+    REGISTERED_USERS_FILE,
+    JSON.stringify({ count: next, updatedAt: Date.now() }, null, 2),
+    'utf8',
+  );
+  return next;
+}
+
+function resolveRegisteredUsers(parsed = {}) {
+  const fromState = Math.floor(Number(parsed.registeredUsers) || 0);
+  const fromDrift = BASE_REGISTERED_USERS + Math.max(0, Math.floor(Number(parsed.registeredUsersDrift) || 0));
+  const fromHighWater = readRegisteredUsersHighWater();
+  return Math.max(BASE_REGISTERED_USERS, fromState, fromDrift, fromHighWater);
+}
+
 function createInitialState() {
   return {
     feedVersion: FEED_STATE_VERSION,
     feed: Array.from({ length: 24 }, () => createBotFeedItem()),
     totalUpgrades: BASE_TOTAL_UPGRADES,
     playersOnline: 500 + Math.floor(Math.random() * 300) + 1,
+    registeredUsers: resolveRegisteredUsers(),
     registeredUsersDrift: 0,
     updatedAt: Date.now(),
   };
@@ -440,12 +472,14 @@ function loadState() {
       fs.writeFileSync(STATE_FILE, JSON.stringify(initial, null, 2), 'utf8');
       return initial;
     }
+    const registeredUsers = resolveRegisteredUsers(parsed);
     return {
       feedVersion: FEED_STATE_VERSION,
       feed: parsed.feed.slice(0, 40).map(enrichFeedItem),
       totalUpgrades: Math.max(BASE_TOTAL_UPGRADES, Math.floor(parsed.totalUpgrades ?? BASE_TOTAL_UPGRADES)),
       playersOnline: Math.max(480, Math.min(820, Math.floor(parsed.playersOnline ?? 650))),
-      registeredUsersDrift: Math.max(0, Math.floor(parsed.registeredUsersDrift ?? 0)),
+      registeredUsers,
+      registeredUsersDrift: Math.max(0, registeredUsers - BASE_REGISTERED_USERS),
       updatedAt: parsed.updatedAt ?? Date.now(),
     };
   } catch {
@@ -456,12 +490,16 @@ function loadState() {
 }
 
 function saveState(state) {
+  const registeredUsers = writeRegisteredUsersHighWater(
+    Math.max(BASE_REGISTERED_USERS, Math.floor(Number(state.registeredUsers) || 0)),
+  );
   const next = {
     feedVersion: FEED_STATE_VERSION,
     feed: state.feed.slice(0, 40),
     totalUpgrades: Math.max(BASE_TOTAL_UPGRADES, Math.floor(state.totalUpgrades)),
     playersOnline: Math.max(480, Math.min(820, Math.floor(state.playersOnline))),
-    registeredUsersDrift: Math.max(0, Math.floor(state.registeredUsersDrift ?? 0)),
+    registeredUsers,
+    registeredUsersDrift: Math.max(0, registeredUsers - BASE_REGISTERED_USERS),
     updatedAt: Date.now(),
   };
   fs.writeFileSync(STATE_FILE, JSON.stringify(next, null, 2), 'utf8');
@@ -483,37 +521,68 @@ function driftPlayersOnline(current) {
   return Math.max(480, Math.min(820, current + delta));
 }
 
-let registeredCountCache = { count: 0, at: 0 };
+function getDisplayedRegisteredUsers(state = loadState()) {
+  return Math.max(BASE_REGISTERED_USERS, Math.floor(Number(state.registeredUsers) || 0), readRegisteredUsersHighWater());
+}
 
-async function refreshRegisteredUserCount(force = false) {
-  if (!force && Date.now() - registeredCountCache.at < 120_000 && registeredCountCache.count > 0) {
-    return registeredCountCache.count;
-  }
-  try {
-    const dbCount = await Promise.race([
-      userStore.countAccounts(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('user count timeout')), 5000)),
-    ]);
-    const next = Math.max(0, Math.floor(Number(dbCount) || 0));
-    if (next > 0 || registeredCountCache.count === 0) {
-      registeredCountCache = { count: next, at: Date.now() };
-    } else {
-      registeredCountCache = { ...registeredCountCache, at: Date.now() };
+function bumpRegisteredUsers(amount = 1) {
+  const state = loadState();
+  const current = getDisplayedRegisteredUsers(state);
+  const next = current + Math.max(1, Math.floor(Number(amount) || 1));
+  saveState({ ...state, registeredUsers: next });
+  return next;
+}
+
+function scheduleRegisteredUsersTick() {
+  const delayMs = 25_000 + Math.floor(Math.random() * 75_001); // 25–100s
+  setTimeout(() => {
+    try {
+      const count = bumpRegisteredUsers(1);
+      console.log(`[site-state] registered users=${count}`);
+    } catch (error) {
+      console.warn('[site-state] registered tick failed:', error instanceof Error ? error.message : error);
     }
-  } catch (error) {
-    console.warn('[site-state] user count failed:', error instanceof Error ? error.message : error);
+    scheduleRegisteredUsersTick();
+  }, delayMs).unref?.();
+}
+
+function bumpRegisteredUsersOnDeploy() {
+  const deployId = String(
+    process.env.RENDER_GIT_COMMIT
+    || process.env.RENDER_EXTERNAL_URL
+    || process.env.npm_package_version
+    || 'boot',
+  ).trim() || 'boot';
+  const markerPath = path.join(STATE_DIR, '.registered-users-deploy');
+  let previous = '';
+  try {
+    previous = fs.readFileSync(markerPath, 'utf8').trim();
+  } catch {
+    previous = '';
   }
-  return registeredCountCache.count;
+  const state = loadState();
+  let count = getDisplayedRegisteredUsers(state);
+  if (previous !== deployId) {
+    count = bumpRegisteredUsers(1);
+    try {
+      fs.writeFileSync(markerPath, deployId, 'utf8');
+    } catch {
+      /* ignore */
+    }
+    console.log(`[site-state] deploy bump registered users=${count}`);
+  } else if (state.registeredUsers !== count) {
+    saveState({ ...state, registeredUsers: count });
+  }
+  return count;
 }
 
 async function buildPublicSiteState() {
   const state = loadState();
-  const dbCount = await refreshRegisteredUserCount(false);
   return {
     feed: state.feed,
     totalUpgrades: state.totalUpgrades,
     playersOnline: state.playersOnline,
-    registeredUsers: dbCount,
+    registeredUsers: getDisplayedRegisteredUsers(state),
     updatedAt: state.updatedAt,
   };
 }
@@ -2329,9 +2398,13 @@ setInterval(() => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[BloxUpgrader.com] listening on 0.0.0.0:${PORT} ${SITE_URL}`);
-  void refreshRegisteredUserCount(true).then((count) => {
+  try {
+    const count = bumpRegisteredUsersOnDeploy();
     console.log(`[site-state] registered users=${count}`);
-  }).catch(() => {});
+  } catch (error) {
+    console.warn('[site-state] registered boot failed:', error instanceof Error ? error.message : error);
+  }
+  scheduleRegisteredUsersTick();
   void refreshStorageStatus().then(() => {
     console.log(`[UserDB] backend=${userStore.type ?? 'file'} path=${storageStatus.path}`);
     console.log(`[UserDB] storage ${storageStatus.ok ? 'OK' : 'FAILED'}${storageStatus.error ? `: ${storageStatus.error}` : ''}`);

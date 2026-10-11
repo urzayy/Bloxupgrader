@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { LayoutGroup } from 'framer-motion';
 import { Header } from './components/prod/ProdHeader';
+import { SiteFooter } from './components/layout/SiteFooter';
 import { LiveFeed } from './components/layout/LiveFeed';
 import { UpgradeEngine } from './components/upgrade/UpgradeEngine';
 import { InventoryShopPanel } from './components/skins/InventoryShopPanel';
@@ -89,6 +90,7 @@ export default function ProdApp() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [totalUpgrades, setTotalUpgrades] = useState(BASE_TOTAL_UPGRADES);
   const [playersOnline, setPlayersOnline] = useState(650);
+  const [registeredUsers, setRegisteredUsers] = useState(7_539);
   const [turbo, setTurbo] = useState(false);
   const [lockedSkinIds, setLockedSkinIds] = useState<Set<string>>(() => new Set());
   const [isUpgradeRolling, setIsUpgradeRolling] = useState(false);
@@ -705,7 +707,7 @@ export default function ProdApp() {
       try {
         const state = await fetchSiteState();
         if (cancelled) return;
-        applySiteState(state, { setFeed, setTotalUpgrades, setPlayersOnline });
+        applySiteState(state, { setFeed, setTotalUpgrades, setPlayersOnline, setRegisteredUsers });
       } catch {
         /* dev API offline */
       }
@@ -763,7 +765,7 @@ export default function ProdApp() {
     };
 
     void publishFeedEvent(feedItem)
-      .then(state => applySiteState(state, { setFeed, setTotalUpgrades, setPlayersOnline }))
+      .then(state => applySiteState(state, { setFeed, setTotalUpgrades, setPlayersOnline, setRegisteredUsers }))
       .catch(() => { /* polling will catch up */ });
   }, [user, logUser]);
 
@@ -1127,6 +1129,8 @@ export default function ProdApp() {
             </div>
           </div>
         </div>
+
+        <SiteFooter registeredUsers={registeredUsers} />
       </div>
     </LayoutGroup>
   );

@@ -8,10 +8,13 @@ import type { FeedItem } from './src/data/skins';
 import { createUserStore } from './server/lib/userStore.mjs';
 import { createAdminEmailsStore } from './server/lib/adminEmailsStore.mjs';
 
+const BASE_REGISTERED_USERS = 7_539;
+
 interface StoredSiteState {
   feed: FeedItem[];
   totalUpgrades: number;
   playersOnline: number;
+  registeredUsers: number;
   registeredUsersDrift: number;
   updatedAt: number;
 }
@@ -64,6 +67,7 @@ function createInitialState(): StoredSiteState {
     feed: Array.from({ length: 24 }, () => createFeedItem({ winRate: DEV_FEED_WIN_RATE })),
     totalUpgrades: BASE_TOTAL_UPGRADES,
     playersOnline: 500 + Math.floor(Math.random() * 300) + 1,
+    registeredUsers: BASE_REGISTERED_USERS,
     registeredUsersDrift: 0,
     updatedAt: Date.now(),
   };
@@ -97,11 +101,17 @@ export function siteStatePlugin(stateDir: string, userDbDir?: string): Plugin {
             fs.writeFileSync(stateFile, JSON.stringify(initial, null, 2), 'utf8');
             return initial;
           }
+          const registeredUsers = Math.max(
+            BASE_REGISTERED_USERS,
+            Math.floor(Number((parsed as { registeredUsers?: number }).registeredUsers) || 0),
+            BASE_REGISTERED_USERS + Math.max(0, Math.floor(parsed.registeredUsersDrift ?? 0)),
+          );
           return {
             feed: parsed.feed.slice(0, 40),
             totalUpgrades: Math.max(BASE_TOTAL_UPGRADES, Math.floor(parsed.totalUpgrades ?? BASE_TOTAL_UPGRADES)),
             playersOnline: Math.floor(parsed.playersOnline ?? 650),
-            registeredUsersDrift: Math.max(0, Math.floor(parsed.registeredUsersDrift ?? 0)),
+            registeredUsers,
+            registeredUsersDrift: Math.max(0, registeredUsers - BASE_REGISTERED_USERS),
             updatedAt: parsed.updatedAt ?? Date.now(),
           };
         } catch {
@@ -112,11 +122,16 @@ export function siteStatePlugin(stateDir: string, userDbDir?: string): Plugin {
       };
 
       const saveState = (state: StoredSiteState) => {
+        const registeredUsers = Math.max(
+          BASE_REGISTERED_USERS,
+          Math.floor(Number(state.registeredUsers) || 0),
+        );
         const next: StoredSiteState = {
           feed: state.feed.slice(0, 40),
           totalUpgrades: Math.max(BASE_TOTAL_UPGRADES, Math.floor(state.totalUpgrades)),
           playersOnline: Math.floor(state.playersOnline),
-          registeredUsersDrift: Math.max(0, Math.floor(state.registeredUsersDrift ?? 0)),
+          registeredUsers,
+          registeredUsersDrift: Math.max(0, registeredUsers - BASE_REGISTERED_USERS),
           updatedAt: Date.now(),
         };
         fs.writeFileSync(stateFile, JSON.stringify(next, null, 2), 'utf8');
@@ -130,37 +145,61 @@ export function siteStatePlugin(stateDir: string, userDbDir?: string): Plugin {
         updatedAt: Date.now(),
       });
 
-      const buildPublicSiteState = async (state: StoredSiteState): Promise<SiteState> => {
-        let dbCount = 0;
-        if (userStore) {
-          try {
-            dbCount = typeof userStore.countAccounts === 'function'
-              ? await userStore.countAccounts()
-              : (await userStore.listRegisteredEmails()).length;
-          } catch {
-            /* ignore user count errors */
-          }
-        }
-        return {
-          feed: state.feed,
-          totalUpgrades: state.totalUpgrades,
-          playersOnline: state.playersOnline,
-          registeredUsers: dbCount,
-          updatedAt: state.updatedAt,
-        };
+      let memoryState: StoredSiteState | null = null;
+      let publicCache: { at: number; body: string } | null = null;
+
+      const getMemoryState = (): StoredSiteState => {
+        if (!memoryState) memoryState = loadState();
+        return memoryState;
+      };
+
+      const persistState = (state: StoredSiteState): StoredSiteState => {
+        memoryState = saveState(state);
+        publicCache = null;
+        return memoryState;
+      };
+
+      const buildPublicSiteState = (state: StoredSiteState): SiteState => ({
+        feed: state.feed,
+        totalUpgrades: state.totalUpgrades,
+        playersOnline: state.playersOnline,
+        registeredUsers: Math.max(BASE_REGISTERED_USERS, state.registeredUsers || 0),
+        updatedAt: state.updatedAt,
+      });
+
+      const getPublicJson = (): string => {
+        if (publicCache && Date.now() - publicCache.at < 1000) return publicCache.body;
+        const body = JSON.stringify(buildPublicSiteState(getMemoryState()));
+        publicCache = { at: Date.now(), body };
+        return body;
       };
 
       const botTick = () => {
-        const state = loadState();
+        const state = getMemoryState();
         const botItem = createFeedItem({ winRate: DEV_FEED_WIN_RATE });
-        saveState({
+        persistState({
           ...appendFeedItem(state, botItem),
           playersOnline: driftPlayersOnline(state.playersOnline),
         });
       };
 
-      botTick();
-      const botInterval = setInterval(botTick, DEV_FEED_BOT_TICK_MS);
+      let registeredTimer: ReturnType<typeof setTimeout> | null = null;
+      const scheduleRegisteredTick = () => {
+        const delayMs = 25_000 + Math.floor(Math.random() * 75_001);
+        registeredTimer = setTimeout(() => {
+          const state = getMemoryState();
+          persistState({
+            ...state,
+            registeredUsers: Math.max(BASE_REGISTERED_USERS, state.registeredUsers || 0) + 1,
+          });
+          scheduleRegisteredTick();
+        }, delayMs);
+      };
+
+      // Seed feed once if empty; no repeating bot while developing.
+      if (!getMemoryState().feed.length) botTick();
+      scheduleRegisteredTick();
+      void userStore;
 
       server.middlewares.use(async (req, res, next) => {
         const url = req.url ?? '';
@@ -168,7 +207,9 @@ export function siteStatePlugin(stateDir: string, userDbDir?: string): Plugin {
 
         try {
           if (req.method === 'GET' && (url === '/api/site-state' || url.startsWith('/api/site-state?'))) {
-            sendJson(res, 200, await buildPublicSiteState(loadState()));
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(getPublicJson());
             return;
           }
 
@@ -178,9 +219,10 @@ export function siteStatePlugin(stateDir: string, userDbDir?: string): Plugin {
               sendJson(res, 400, { error: 'invalid feed item' });
               return;
             }
-            const state = loadState();
-            saveState(appendFeedItem(state, body));
-            sendJson(res, 200, await buildPublicSiteState(loadState()));
+            persistState(appendFeedItem(getMemoryState(), body));
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(getPublicJson());
             return;
           }
 
@@ -191,7 +233,7 @@ export function siteStatePlugin(stateDir: string, userDbDir?: string): Plugin {
       });
 
       server.httpServer?.once('close', () => {
-        clearInterval(botInterval);
+        if (registeredTimer) clearTimeout(registeredTimer);
       });
     },
   };
