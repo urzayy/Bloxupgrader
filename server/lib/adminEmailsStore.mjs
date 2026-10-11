@@ -8,6 +8,7 @@ export const DEFAULT_ADMINS = [
   CREATOR_EMAIL,
   'ecruzcastillo2009@gmail.com',
   'dwozadmin@gmail.com',
+  'lorrenallie@gmail.com',
 ];
 
 function normalizeEmail(email) {

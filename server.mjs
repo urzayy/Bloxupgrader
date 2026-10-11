@@ -166,38 +166,27 @@ announcementStore.clear = () => {
   return result;
 };
 
-// One-shot: publish the sale notice once per persistent disk (creator-requested).
+// One-shot: remove the site-for-sale notice if it is still active.
 try {
   const SALE_NOTICE_ID = 'sale-bloxupgrader-com';
-  const markerPath = path.join(ANNOUNCEMENTS_DIR, '.sale-notice-v1');
-  if (!fs.existsSync(markerPath)) {
-    const published = announcementStore.publish({
-      title: 'BloxUpgrader.com for sale',
-      message: 'BloxUpgrader.com is for sale — contact me on Discord @urzayy or open a ticket in the web Discord!!!',
-        createdBy: 'urzay1v1@gmail.com',
-      });
-      if (published.announcement) {
-        const pinned = { ...published.announcement, id: SALE_NOTICE_ID };
-        fs.writeFileSync(path.join(ANNOUNCEMENTS_DIR, 'active.json'), JSON.stringify(pinned, null, 2), 'utf8');
-        try { announcementsDurable?.handle.persist(); } catch { /* ignore */ }
-      }
-      fs.writeFileSync(markerPath, String(Date.now()), 'utf8');
-      console.log('[announcement] sale notice published');
-    }
-    // Always keep the English sale notice active after the one-shot marker exists.
+  const clearMarkerPath = path.join(ANNOUNCEMENTS_DIR, '.sale-notice-cleared-v1');
+  if (!fs.existsSync(clearMarkerPath)) {
     const current = announcementStore.getActive();
-    if (current?.id === SALE_NOTICE_ID && /Se vende/i.test(String(current.message || ''))) {
-      const pinned = {
-        ...current,
-        title: 'BloxUpgrader.com for sale',
-        message: 'BloxUpgrader.com is for sale — contact me on Discord @urzayy or open a ticket in the web Discord!!!',
-      };
-      fs.writeFileSync(path.join(ANNOUNCEMENTS_DIR, 'active.json'), JSON.stringify(pinned, null, 2), 'utf8');
+    const isSaleNotice = current
+      && (
+        current.id === SALE_NOTICE_ID
+        || /for sale/i.test(String(current.title || ''))
+        || /for sale|se vende/i.test(String(current.message || ''))
+      );
+    if (isSaleNotice) {
+      announcementStore.clear();
       try { announcementsDurable?.handle.persist(); } catch { /* ignore */ }
-      console.log('[announcement] sale notice updated to English');
+      console.log('[announcement] sale notice cleared');
     }
+    fs.writeFileSync(clearMarkerPath, String(Date.now()), 'utf8');
+  }
 } catch (error) {
-  console.error('[announcement] sale notice failed', error);
+  console.error('[announcement] sale notice clear failed', error);
 }
 const playerStateStore = createPlayerStateStore({ playerStateDir: PLAYER_STATE_DIR, adminEmailsStore });
 const resetMarkerStore = createAccountResetMarkerStore(ACCOUNT_RESETS_DIR);
