@@ -459,7 +459,7 @@ export default function ProdApp() {
 
     const syncWithdrawState = async () => {
       try {
-        const tickets = await fetchUserWithdrawTickets(user.userId);
+        const tickets = await fetchUserWithdrawTickets(user.userId, user.email);
         setLockedSkinIds(new Set(getPendingWithdrawSkinIds(tickets)));
 
         const isInitial = initialWithdrawSyncRef.current;

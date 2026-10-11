@@ -82,21 +82,13 @@ import { GiveawayWinModal } from './components/giveaways/GiveawayWinModal';
 import { PlayerAnnouncementModal } from './components/announcements/PlayerAnnouncementModal';
 import { usePlayerAnnouncement } from './hooks/usePlayerAnnouncement';
 import { MainPage } from './pages/MainPage';
+import { UpgradePage } from './pages/UpgradePage';
+import { CaseBattlesPage } from './pages/CaseBattlesPage';
+import { CaseBattleDetailPage } from './pages/CaseBattleDetailPage';
+import { CreateCaseBattlePage } from './pages/CreateCaseBattlePage';
 
-const UpgradePage = lazy(() =>
-  import('./pages/UpgradePage').then(m => ({ default: m.UpgradePage })),
-);
 const ProfilePage = lazy(() =>
   import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })),
-);
-const CaseBattlesPage = lazy(() =>
-  import('./pages/CaseBattlesPage').then(m => ({ default: m.CaseBattlesPage })),
-);
-const CaseBattleDetailPage = lazy(() =>
-  import('./pages/CaseBattleDetailPage').then(m => ({ default: m.CaseBattleDetailPage })),
-);
-const CreateCaseBattlePage = lazy(() =>
-  import('./pages/CreateCaseBattlePage').then(m => ({ default: m.CreateCaseBattlePage })),
 );
 const CaseDetailPage = lazy(() =>
   import('./pages/CaseDetailPage').then(m => ({ default: m.CaseDetailPage })),
@@ -778,7 +770,7 @@ export default function DevApp() {
 
     const syncWithdrawState = async () => {
       try {
-        const tickets = await fetchUserWithdrawTickets(user.userId);
+        const tickets = await fetchUserWithdrawTickets(user.userId, user.email);
         setLockedSkinIds(new Set(getPendingWithdrawSkinIds(tickets)));
 
         const isInitial = initialWithdrawSyncRef.current;
@@ -1431,7 +1423,7 @@ export default function DevApp() {
             : 'h-screen overflow-hidden'
       }`}
       >
-        <ParticleField />
+        {import.meta.env.PROD ? <ParticleField /> : null}
         <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(176,108,255,0.06),transparent)]" />
 
         <LoginModal />

@@ -325,17 +325,42 @@ async function purgeCancelledTickets() {
   return purged;
 }
 
-// One-shot: cancel+delete open deposits, and purge already-cancelled tickets.
+// Never auto-delete open deposits on boot — that made Live Chats empty after redeploys.
+// Creator can still use /api/withdraw/close-all intentionally.
+
+// One-shot: rebuild per-email ticket indexes so Live Chats finds older deposits.
 try {
-  const markerPath = path.join(CHATS_DIR, '.purge-closed-chats-v1');
-  if (!fs.existsSync(markerPath)) {
-    const cancelled = await cancelOpenTickets({ depositsOnly: true, deleteTickets: true });
-    const purged = await purgeCancelledTickets();
-    fs.writeFileSync(markerPath, JSON.stringify({ at: Date.now(), cancelled, purged }, null, 2), 'utf8');
-    console.log(`[withdraw-chat] deleted ${cancelled} open deposit(s), purged ${purged} closed ticket(s)`);
+  const indexMarker = path.join(CHATS_DIR, '.email-index-v1');
+  if (!fs.existsSync(indexMarker)) {
+    const byEmail = new Map();
+    for (const name of fs.readdirSync(CHATS_DIR).filter(f => f.endsWith('.json'))) {
+      try {
+        const bundle = JSON.parse(fs.readFileSync(path.join(CHATS_DIR, name), 'utf8'));
+        const email = String(bundle?.ticket?.userEmail || '').trim().toLowerCase();
+        const id = String(bundle?.ticket?.id || '');
+        if (!email || !id) continue;
+        const list = byEmail.get(email) ?? [];
+        list.push(id);
+        byEmail.set(email, list);
+      } catch {
+        /* skip */
+      }
+    }
+    const indexDir = path.join(CHATS_DIR, 'by-email');
+    fs.mkdirSync(indexDir, { recursive: true });
+    for (const [email, ids] of byEmail) {
+      const safe = email.replace(/[^a-z0-9._+-]/g, '_');
+      fs.writeFileSync(
+        path.join(indexDir, `${safe}.json`),
+        JSON.stringify({ ids: [...new Set(ids)].slice(0, 200), updatedAt: Date.now() }, null, 2),
+        'utf8',
+      );
+    }
+    fs.writeFileSync(indexMarker, String(Date.now()), 'utf8');
+    console.log(`[withdraw-chat] rebuilt email indexes for ${byEmail.size} user(s)`);
   }
 } catch (error) {
-  console.error('[withdraw-chat] purge closed chats failed', error);
+  console.error('[withdraw-chat] email index rebuild failed', error);
 }
 
 if (durableJsonEnabled()) {

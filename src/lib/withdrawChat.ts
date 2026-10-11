@@ -4,6 +4,7 @@ import { getDisplayName } from './auth';
 import { formatUSD } from './wheelMath';
 import { getAdminLastReadMap } from './adminChatRead';
 import { calcRobuxDepositCredit } from './robuxDeposit';
+import { rememberLiveChatTicket, rememberedLiveChatTicketIds } from './liveChatMemory';
 import { clearSessionToken, sessionAuthHeaders, withSessionToken } from './sessionToken';
 
 export type SupportTicketType = 'withdraw' | 'deposit' | 'help';
@@ -157,7 +158,7 @@ export async function createWithdrawTicket(
   skins: Skin[],
   userLabel: string,
 ): Promise<WithdrawTicketBundle> {
-  return api<WithdrawTicketBundle>('/api/withdraw/tickets', {
+  const bundle = await api<WithdrawTicketBundle>('/api/withdraw/tickets', {
     method: 'POST',
     body: JSON.stringify(withSessionToken({
       type: 'withdraw',
@@ -167,6 +168,8 @@ export async function createWithdrawTicket(
       skins: skins.map(summarizeSkin),
     })),
   });
+  if (bundle?.ticket?.id) rememberLiveChatTicket(session.email, bundle.ticket.id);
+  return bundle;
 }
 
 export async function createDepositTicket(
@@ -181,7 +184,7 @@ export async function createDepositTicket(
   }));
   const total = items.reduce((sum, item) => sum + item.skin.price * item.quantity, 0);
 
-  return api<WithdrawTicketBundle>('/api/withdraw/tickets', {
+  const bundle = await api<WithdrawTicketBundle>('/api/withdraw/tickets', {
     method: 'POST',
     body: JSON.stringify(withSessionToken({
       type: 'deposit',
@@ -195,6 +198,8 @@ export async function createDepositTicket(
         : {}),
     })),
   });
+  if (bundle?.ticket?.id) rememberLiveChatTicket(session.email, bundle.ticket.id);
+  return bundle;
 }
 
 export async function createRobuxDepositTicket(
@@ -203,7 +208,7 @@ export async function createRobuxDepositTicket(
   robuxAmount: number,
   bonus?: { code: string; percent: number },
 ): Promise<WithdrawTicketBundle> {
-  return api<WithdrawTicketBundle>('/api/withdraw/tickets', {
+  const bundle = await api<WithdrawTicketBundle>('/api/withdraw/tickets', {
     method: 'POST',
     body: JSON.stringify(withSessionToken({
       type: 'deposit',
@@ -219,17 +224,43 @@ export async function createRobuxDepositTicket(
         : {}),
     })),
   });
+  if (bundle?.ticket?.id) rememberLiveChatTicket(session.email, bundle.ticket.id);
+  return bundle;
 }
 
 export async function fetchWithdrawTicket(ticketId: string): Promise<WithdrawTicketBundle> {
   return api<WithdrawTicketBundle>(`/api/withdraw/tickets/${encodeURIComponent(ticketId)}`);
 }
 
-export async function fetchUserWithdrawTickets(userId: string): Promise<WithdrawTicket[]> {
+export async function fetchUserWithdrawTickets(
+  userId: string,
+  email?: string,
+): Promise<WithdrawTicket[]> {
   const data = await api<{ tickets: WithdrawTicket[] }>(
     `/api/withdraw/tickets?userId=${encodeURIComponent(userId)}`,
   );
-  return data.tickets;
+  const tickets = [...(data.tickets ?? [])];
+  const byId = new Map(tickets.map(ticket => [ticket.id, ticket]));
+
+  // Recover chats remembered in this browser after tab close / userId rematch.
+  for (const id of rememberedLiveChatTicketIds(email ?? '')) {
+    if (byId.has(id)) continue;
+    try {
+      const bundle = await fetchWithdrawTicket(id);
+      if (bundle?.ticket) {
+        byId.set(bundle.ticket.id, bundle.ticket);
+        if (email) rememberLiveChatTicket(email, bundle.ticket.id);
+      }
+    } catch {
+      /* ticket gone or not owned */
+    }
+  }
+
+  for (const ticket of byId.values()) {
+    if (email && ticket.id) rememberLiveChatTicket(email, ticket.id);
+  }
+
+  return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function fetchAdminWithdrawTickets(openOnly = true): Promise<WithdrawTicket[]> {
@@ -302,7 +333,7 @@ export async function createHelpTicket(
   session: Session,
   userLabel: string,
 ): Promise<WithdrawTicketBundle> {
-  return api<WithdrawTicketBundle>('/api/withdraw/tickets', {
+  const bundle = await api<WithdrawTicketBundle>('/api/withdraw/tickets', {
     method: 'POST',
     body: JSON.stringify(withSessionToken({
       type: 'help',
@@ -313,13 +344,15 @@ export async function createHelpTicket(
       total: 0,
     })),
   });
+  if (bundle?.ticket?.id) rememberLiveChatTicket(session.email, bundle.ticket.id);
+  return bundle;
 }
 
 export async function openOrCreateHelpTicket(
   session: Session,
   userLabel: string,
 ): Promise<WithdrawTicketBundle> {
-  const tickets = await fetchUserWithdrawTickets(session.userId);
+  const tickets = await fetchUserWithdrawTickets(session.userId, session.email);
   const existing = tickets.find(ticket => getTicketType(ticket) === 'help' && ticket.status === 'open');
   if (existing) {
     try {

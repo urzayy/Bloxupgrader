@@ -86,10 +86,16 @@ async function mergeTicketLists(remoteStore, fileStore, filter) {
 
 export function createFileWithdrawChatStore(chatsDir) {
   if (!fs.existsSync(chatsDir)) fs.mkdirSync(chatsDir, { recursive: true });
+  const emailIndexDir = path.join(chatsDir, 'by-email');
   let ticketIndex = null;
 
   function ticketPath(id) {
     return path.join(chatsDir, `${id}.json`);
+  }
+
+  function emailIndexPath(email) {
+    const safe = normalizeEmail(email).replace(/[^a-z0-9._+-]/g, '_');
+    return path.join(emailIndexDir, `${safe}.json`);
   }
 
   function loadBundleSync(id) {
@@ -102,6 +108,58 @@ export function createFileWithdrawChatStore(chatsDir) {
     }
   }
 
+  function readEmailIndexIds(email) {
+    const file = emailIndexPath(email);
+    if (!fs.existsSync(file)) return [];
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return Array.isArray(parsed?.ids) ? parsed.ids.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeEmailIndexIds(email, ids) {
+    if (!fs.existsSync(emailIndexDir)) fs.mkdirSync(emailIndexDir, { recursive: true });
+    const unique = [...new Set(ids.map(String).filter(Boolean))].slice(0, 200);
+    fs.writeFileSync(
+      emailIndexPath(email),
+      JSON.stringify({ ids: unique, updatedAt: Date.now() }, null, 2),
+      'utf8',
+    );
+  }
+
+  function indexTicketByEmail(ticket) {
+    const email = normalizeEmail(ticket?.userEmail);
+    if (!email || !ticket?.id) return;
+    const ids = readEmailIndexIds(email);
+    if (!ids.includes(ticket.id)) {
+      ids.unshift(ticket.id);
+      writeEmailIndexIds(email, ids);
+    }
+  }
+
+  function removeTicketFromEmailIndex(ticket) {
+    const email = normalizeEmail(ticket?.userEmail);
+    if (!email || !ticket?.id) return;
+    const ids = readEmailIndexIds(email).filter(id => id !== ticket.id);
+    writeEmailIndexIds(email, ids);
+  }
+
+  function scanAllTickets() {
+    const tickets = [];
+    for (const name of fs.readdirSync(chatsDir)) {
+      if (!name.endsWith('.json')) continue;
+      try {
+        const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, name), 'utf8'));
+        if (bundle?.ticket?.id) tickets.push(bundle.ticket);
+      } catch {
+        /* skip corrupt file */
+      }
+    }
+    return tickets;
+  }
+
   return {
     type: 'file',
     async loadBundle(id) {
@@ -109,34 +167,41 @@ export function createFileWithdrawChatStore(chatsDir) {
     },
     async saveBundle(bundle) {
       fs.writeFileSync(ticketPath(bundle.ticket.id), JSON.stringify(bundle, null, 2), 'utf8');
+      indexTicketByEmail(bundle.ticket);
       ticketIndex = null;
       return bundle;
     },
     async deleteBundle(id) {
+      const existing = loadBundleSync(id);
       const file = ticketPath(id);
       if (fs.existsSync(file)) {
         try { fs.unlinkSync(file); } catch { /* ignore */ }
       }
+      if (existing?.ticket) removeTicketFromEmailIndex(existing.ticket);
       ticketIndex = null;
       return { ok: true };
     },
     async listTickets(filter) {
       let files = ticketIndex;
       if (!files) {
-        files = [];
-        for (const file of fs.readdirSync(chatsDir).filter(name => name.endsWith('.json'))) {
-          try {
-            const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, file), 'utf8'));
-            if (bundle?.ticket) files.push(bundle.ticket);
-          } catch {
-            /* skip corrupt file */
-          }
-        }
+        files = scanAllTickets();
         ticketIndex = files;
       }
       let tickets = files;
       if (filter?.userId || filter?.userEmail) {
         tickets = tickets.filter(ticket => ticketMatchesOwner(ticket, filter));
+      }
+      // Email index recovers tickets even if a full scan miss / stale cache happens.
+      if (filter?.userEmail) {
+        const byId = new Map(tickets.map(ticket => [ticket.id, ticket]));
+        for (const id of readEmailIndexIds(filter.userEmail)) {
+          if (byId.has(id)) continue;
+          const bundle = loadBundleSync(id);
+          if (bundle?.ticket && ticketMatchesOwner(bundle.ticket, filter)) {
+            byId.set(id, bundle.ticket);
+          }
+        }
+        tickets = Array.from(byId.values());
       }
       if (filter?.openOnly) tickets = tickets.filter(ticket => ticket.status === 'open');
       return tickets.sort((a, b) => b.updatedAt - a.updatedAt);

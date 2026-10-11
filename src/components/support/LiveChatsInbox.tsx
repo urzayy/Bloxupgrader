@@ -12,11 +12,12 @@ import {
 interface Props {
   open: boolean;
   userId: string;
+  userEmail: string;
   onClose: () => void;
   onOpenTicket: (ticketId: string) => void;
 }
 
-export function LiveChatsInbox({ open, userId, onClose, onOpenTicket }: Props) {
+export function LiveChatsInbox({ open, userId, userEmail, onClose, onOpenTicket }: Props) {
   const [tickets, setTickets] = useState<WithdrawTicket[]>([]);
   const [error, setError] = useState('');
 
@@ -24,7 +25,7 @@ export function LiveChatsInbox({ open, userId, onClose, onOpenTicket }: Props) {
     if (!open || !userId) return;
     const load = async () => {
       try {
-        setTickets(await fetchUserWithdrawTickets(userId));
+        setTickets(await fetchUserWithdrawTickets(userId, userEmail));
         setError('');
       } catch {
         setError('Could not load your chats.');
@@ -33,7 +34,7 @@ export function LiveChatsInbox({ open, userId, onClose, onOpenTicket }: Props) {
     void load();
     const id = setInterval(() => { void load(); }, 12_000);
     return () => clearInterval(id);
-  }, [open, userId]);
+  }, [open, userId, userEmail]);
 
   return (
     <AnimatePresence>

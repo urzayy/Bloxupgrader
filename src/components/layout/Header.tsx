@@ -264,7 +264,7 @@ export function Header({
     if (!user) return;
     const load = async () => {
       try {
-        const tickets = await fetchUserWithdrawTickets(user.userId);
+        const tickets = await fetchUserWithdrawTickets(user.userId, user.email);
         setOpenLiveChatCount(tickets.filter(t => t.status === 'open').length);
       } catch {
         setOpenLiveChatCount(0);
@@ -399,6 +399,7 @@ export function Header({
         <LiveChatsInbox
           open={liveChatsOpen}
           userId={user.userId}
+          userEmail={user.email}
           onClose={() => setLiveChatsOpen(false)}
           onOpenTicket={openSupportChat}
         />
