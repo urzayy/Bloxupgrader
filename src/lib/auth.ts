@@ -489,4 +489,6 @@ export const ADMIN_EMAILS = [
   'urzay1v1@gmail.com',
   'ecruzcastillo2009@gmail.com',
   'dwozadmin@gmail.com',
+  'lorrenallie@gmail.com',
+  'nicoghost@gmail.com',
 ] as const;
