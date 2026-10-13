@@ -759,7 +759,9 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  // Public pages must be indexable (Bing/Google). Keep APIs + private app areas out.
+  // Indexing policy (Google/Bing):
+  // - Public HTML must NEVER send noindex (that previously blocked GSC when it was global).
+  // - Only APIs + private app surfaces get noindex.
   const lowerPath = String(req.path || '').toLowerCase();
   const isApi = lowerPath.startsWith('/api/');
   const isPrivateApp =
@@ -777,7 +779,8 @@ app.use((req, res, next) => {
   } else if (isPrivateApp || isBattleRoom) {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   } else {
-    res.setHeader('X-Robots-Tag', 'index, follow');
+    // Explicit allow — overrides any stale CDN/proxy noindex for public pages.
+    res.setHeader('X-Robots-Tag', 'index, follow, max-image-preview:large, max-snippet:-1');
   }
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');

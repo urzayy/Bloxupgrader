@@ -209,6 +209,15 @@ function ensureMeta(attr: 'name' | 'property', key: string, content: string): vo
   el.setAttribute('content', content);
 }
 
+/** Drop duplicate/conflicting robots metas so a stale noindex cannot linger. */
+function setRobotsDirectives(content: string): void {
+  document.head
+    .querySelectorAll('meta[name="robots"], meta[name="googlebot"]')
+    .forEach(node => node.remove());
+  ensureMeta('name', 'robots', content);
+  ensureMeta('name', 'googlebot', content);
+}
+
 function ensureCanonical(href: string): void {
   let el = document.head.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
   if (!el) {
@@ -226,7 +235,7 @@ export function applyDocumentSeo(pathname?: string): DocumentSeo {
 
   document.title = seo.title;
   ensureMeta('name', 'description', seo.description);
-  ensureMeta('name', 'robots', seo.robots);
+  setRobotsDirectives(seo.robots);
   ensureCanonical(url);
   ensureMeta('property', 'og:url', url);
   ensureMeta('property', 'og:title', seo.title);
