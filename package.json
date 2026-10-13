@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/generate-feed-catalog.mjs && vite",
-    "build": "node scripts/generate-feed-catalog.mjs && tsc -b && vite build",
+    "build": "node scripts/generate-feed-catalog.mjs && tsc -b && vite build && node scripts/verify-seo-assets.mjs",
     "generate:cases": "node scripts/generate-case-catalog.mjs",
     "restore:backup": "node scripts/restore-cluster-backup.mjs",
     "reset:progress": "node scripts/reset-all-player-progress.mjs",

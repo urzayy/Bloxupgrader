@@ -2368,6 +2368,77 @@ if (!fs.existsSync(DIST)) {
   process.exit(1);
 }
 
+const PUBLIC_DIR = path.join(ROOT, 'public');
+
+function resolveSeoAsset(fileName) {
+  // Prefer public/ (source of truth) so a stale dist stub cannot poison crawlers.
+  const publicPath = path.join(PUBLIC_DIR, fileName);
+  const distPath = path.join(DIST, fileName);
+  if (fs.existsSync(publicPath)) return publicPath;
+  if (fs.existsSync(distPath)) return distPath;
+  return null;
+}
+
+function isValidSitemapXml(text) {
+  const trimmed = String(text || '').trimStart();
+  if (!trimmed.startsWith('<?xml')) return false;
+  if (/<script[\s>]/i.test(trimmed) || /<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) {
+    return false;
+  }
+  return trimmed.includes('http://www.sitemaps.org/schemas/sitemap/0.9')
+    && /<urlset[\s>]/i.test(trimmed)
+    && /<url[\s>]/i.test(trimmed)
+    && /<loc[\s>]/i.test(trimmed);
+}
+
+// Dedicated SEO routes — never fall through to the SPA HTML shell (which injects <script>).
+app.get('/sitemap.xml', (req, res) => {
+  const filePath = resolveSeoAsset('sitemap.xml');
+  if (!filePath) {
+    res.status(404).type('text/plain').send('sitemap.xml not found');
+    return;
+  }
+  let body;
+  try {
+    body = fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    console.error('[seo] failed to read sitemap.xml', error);
+    res.status(500).type('text/plain').send('sitemap.xml unreadable');
+    return;
+  }
+  if (!isValidSitemapXml(body)) {
+    console.error('[seo] refusing to serve invalid sitemap.xml from', filePath);
+    res.status(500).type('text/plain').send('sitemap.xml invalid');
+    return;
+  }
+  res.status(200);
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.send(body);
+});
+
+app.get('/robots.txt', (req, res) => {
+  const filePath = resolveSeoAsset('robots.txt');
+  if (!filePath) {
+    res.status(404).type('text/plain').send('robots.txt not found');
+    return;
+  }
+  let body;
+  try {
+    body = fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    console.error('[seo] failed to read robots.txt', error);
+    res.status(500).type('text/plain').send('robots.txt unreadable');
+    return;
+  }
+  res.status(200);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.send(body);
+});
+
 app.use('/assets', express.static(path.join(DIST, 'assets'), {
   maxAge: '1y',
   immutable: true,
@@ -2393,6 +2464,11 @@ app.use(express.static(DIST, {
 
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
+  // Never serve the React shell for SEO assets (defense in depth).
+  if (req.path === '/sitemap.xml' || req.path === '/robots.txt') {
+    res.status(404).type('text/plain').send('not found');
+    return;
+  }
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
