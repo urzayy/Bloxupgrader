@@ -94,11 +94,11 @@ export function MobileHeaderBar({
 
         >
 
-          <h1 className="truncate font-display text-sm font-bold tracking-[0.08em] uppercase">
+          <p className="truncate font-display text-sm font-bold tracking-[0.08em] uppercase">
 
             Blox<span className="text-gold">Upgrader</span>
 
-          </h1>
+          </p>
 
           <div className="mt-0.5 flex items-center gap-1.5">
 

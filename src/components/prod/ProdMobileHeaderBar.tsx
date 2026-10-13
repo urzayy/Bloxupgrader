@@ -84,10 +84,10 @@ export function MobileHeaderBar({
         <MobileNavMenuButton />
 
         <div className="min-w-0 flex-1 text-center">
-          <h1 className="font-display text-sm font-bold tracking-[0.12em] uppercase sm:text-base">
+          <p className="font-display text-sm font-bold tracking-[0.12em] uppercase sm:text-base">
             Blox<span className="text-gold">Upgrader</span>
             <span className="text-[10px] font-semibold tracking-normal text-white/40">.com</span>
-          </h1>
+          </p>
         </div>
 
         <div className="h-11 w-11 shrink-0 lg:hidden" aria-hidden="true" />

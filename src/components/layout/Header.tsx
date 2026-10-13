@@ -519,7 +519,7 @@ export function Header({
             DEV_CLEAN_HEADER_LAYOUT ? '' : ''
           }`}
         >
-        <h1 className={`font-display font-bold tracking-[0.12em] uppercase ${
+        <p className={`font-display font-bold tracking-[0.12em] uppercase ${
           DEV_CLEAN_HEADER_LAYOUT ? 'text-xl leading-tight' : 'text-lg'
         }`}
         >
@@ -527,7 +527,7 @@ export function Header({
           {!DEV_CLEAN_HEADER_LAYOUT && (
           <span className="text-[11px] font-semibold tracking-normal text-white/40">.com</span>
           )}
-        </h1>
+        </p>
         </button>
 
         {DEV_CLEAN_HEADER_LAYOUT ? (
