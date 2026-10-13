@@ -773,10 +773,11 @@ app.use((req, res, next) => {
   const isBattleRoom =
     lowerPath.startsWith('/case-battles/')
     && lowerPath !== '/case-battles/create';
+  const isHealth = lowerPath === '/healthz';
   if (isApi) {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
     res.setHeader('Cache-Control', 'no-store');
-  } else if (isPrivateApp || isBattleRoom) {
+  } else if (isPrivateApp || isBattleRoom || isHealth) {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   } else {
     // Explicit allow — overrides any stale CDN/proxy noindex for public pages.
@@ -2462,6 +2463,14 @@ app.use(express.static(DIST, {
   },
 }));
 
+// Lightweight health for Render — avoids treating SPA boot failures as dead service.
+app.get('/healthz', (_req, res) => {
+  res.status(200);
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send('ok');
+});
+
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   // Never serve the React shell for SEO assets (defense in depth).
@@ -2469,14 +2478,41 @@ app.get('*', (req, res, next) => {
     res.status(404).type('text/plain').send('not found');
     return;
   }
+  const indexPath = path.join(DIST, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    res.status(503);
+    res.setHeader('Retry-After', '30');
+    res.type('text/plain').send('Service warming up');
+    return;
+  }
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
-  res.sendFile(path.join(DIST, 'index.html'));
+  res.sendFile(indexPath, (err) => {
+    if (!err) return;
+    if (res.headersSent) return;
+    console.error('[spa] sendFile failed', err instanceof Error ? err.message : err);
+    res.status(503);
+    res.setHeader('Retry-After', '30');
+    res.type('text/plain').send('Service temporarily unavailable');
+  });
 });
 
 app.use('/api/*', (_req, res) => {
   sendJson(res, 404, { error: 'not found' });
+});
+
+// Last-resort error handler — keep public HTML crawls from becoming opaque 5xx crashes.
+app.use((err, req, res, _next) => {
+  console.error('[express]', err instanceof Error ? err.stack || err.message : err);
+  if (res.headersSent) return;
+  if (String(req.path || '').startsWith('/api/')) {
+    sendJson(res, 500, { error: 'server error' });
+    return;
+  }
+  res.status(503);
+  res.setHeader('Retry-After', '30');
+  res.type('text/plain').send('Service temporarily unavailable');
 });
 
 setInterval(() => {
