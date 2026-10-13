@@ -1,4 +1,9 @@
 User-agent: *
 Allow: /
 
+# Private / non-indexable app areas
+Disallow: /admin
+Disallow: /profile
+Disallow: /api/
+
 Sitemap: https://bloxupgrader.com/sitemap.xml
