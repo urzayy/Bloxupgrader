@@ -177,18 +177,6 @@ export function MainPage({ balance }: { balance: number }) {
   return (
     <div className="w-full pb-10 max-lg:pb-28">
       <section className="relative mx-auto mb-3 w-full max-w-[1520px] px-2 sm:mb-6 sm:px-3 lg:px-4">
-        <div className="mb-3 flex flex-wrap items-center gap-2 px-0.5 sm:mb-4 sm:gap-3">
-          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-violet-400" aria-hidden="true">
-            <path d="M6 0 12 6 6 12 0 6Z" fill="currentColor" />
-          </svg>
-          <h1 className="font-display text-lg font-black uppercase tracking-wide text-white sm:text-xl lg:text-2xl">
-            BloxUpgrader — CS2 Skin Upgrader
-          </h1>
-          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-violet-400" aria-hidden="true">
-            <path d="M6 0 12 6 6 12 0 6Z" fill="currentColor" />
-          </svg>
-        </div>
-
         <div className="relative aspect-[16/7] w-full overflow-hidden rounded-xl sm:aspect-[2172/724]">
           <img
             src={CAVE_BANNER_URL}
