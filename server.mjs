@@ -759,12 +759,15 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  // Public pages must be indexable (Bing/Google). Keep APIs out of search.
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    res.setHeader('Cache-Control', 'no-store');
+  } else {
+    res.setHeader('X-Robots-Tag', 'index, follow');
+  }
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
-  if (req.path.startsWith('/api/')) {
-    res.setHeader('Cache-Control', 'no-store');
   }
   next();
 });
