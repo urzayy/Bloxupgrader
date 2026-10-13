@@ -69,6 +69,7 @@ import { DEV_MOBILE_LAYOUT } from './lib/devMobileLayout';
 import { DEV_CLEAN_HEADER_LAYOUT } from './lib/devCleanHeaderLayout';
 import { DEV_FEED_CLIENT_POLL_MS } from './lib/devLiveFeed';
 import { useAppRoute, useBattleId, useCaseSlug, useFreeCaseSlug, useGiveawayPeriod, useIsCreateCaseBattle } from './hooks/useAppRoute';
+import { useDocumentSeo } from './hooks/useDocumentSeo';
 import { ackGiveawayWin, fetchPendingGiveawayWins, type GiveawayPendingWin } from './lib/giveawayApi';
 import { dispatchGiveawayUpdated } from './hooks/useGiveawayDetail';
 import { navigateApp } from './lib/appRoute';
@@ -198,6 +199,7 @@ export default function DevApp() {
   const giveawayPeriod = useGiveawayPeriod();
   const battleId = useBattleId();
   const isCreateCaseBattle = useIsCreateCaseBattle();
+  useDocumentSeo();
   const isMainPage = route === 'main';
   const isUpgradePage = route === 'upgrade';
   const isProfilePage = route === 'profile';

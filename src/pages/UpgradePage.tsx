@@ -136,9 +136,9 @@ export function UpgradePage({
 
       <div className="flex items-center justify-center gap-3 py-1">
         <span className="h-1.5 w-1.5 rounded-full bg-violet-400/80" />
-        <h2 className="font-display text-sm font-bold uppercase tracking-[0.18em] text-white/90 sm:text-base">
-          BloxStrike Skins Upgrade
-        </h2>
+        <h1 className="font-display text-sm font-bold uppercase tracking-[0.18em] text-white/90 sm:text-base">
+          CS2 Skins Upgrade
+        </h1>
         <span className="h-1.5 w-1.5 rounded-full bg-violet-400/80" />
       </div>
 

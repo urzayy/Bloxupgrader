@@ -5,7 +5,7 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="BloxUpgrader.com — The premium CS2 skin upgrade platform. Open cases, use our realistic simulator, shop, deposit, and withdraw with live admin support." />
+    <meta name="description" content="BloxUpgrader.com — The premium CS2 skin upgrade platform. Open cases, upgrade skins, shop, deposit, and withdraw with live admin support." />
     <meta name="theme-color" content="#0B0D12" />
     <meta name="application-name" content="BloxUpgrader" />
     <link rel="canonical" href="https://bloxupgrader.com/" />
@@ -13,7 +13,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://bloxupgrader.com/" />
     <meta property="og:title" content="BloxUpgrader.com — CS2 Skin Upgrade" />
-    <meta property="og:description" content="Upgrade CS2 skins, shop, deposit and withdraw with live admin support." />
+    <meta property="og:description" content="Upgrade CS2 skins, open cases, shop, deposit and withdraw with live admin support." />
     <meta property="og:site_name" content="BloxUpgrader.com" />
     <meta property="og:image" content="https://bloxupgrader.com/banner-social.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -23,12 +23,28 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;700;800;900&display=swap" rel="stylesheet" />
+    <style>
+      /* Visible in the raw HTML for crawlers; hidden once React mounts its page H1. */
+      #boot-h1 {
+        margin: 0;
+        padding: 0.85rem 1rem;
+        text-align: center;
+        font-family: Orbitron, Inter, sans-serif;
+        font-size: clamp(1rem, 2.4vw, 1.35rem);
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #f5f5f7;
+        background: #0B0D12;
+      }
+      #boot-h1[data-booted="1"] {
+        display: none;
+      }
+    </style>
   </head>
-  <body>
-    <h1 class="site-h1" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0">BloxUpgrader — CS2 Skin Upgrader</h1>
+  <body style="margin:0;background:#0B0D12">
+    <h1 id="boot-h1">BloxUpgrader — CS2 Skin Upgrader</h1>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
-

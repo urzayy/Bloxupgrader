@@ -270,6 +270,14 @@ export function GiveawayDetailPage({ period: rawPeriod }: Props) {
 
 
 
+        <h1 className="mb-4 font-display text-xl font-black uppercase tracking-wide text-white sm:text-2xl">
+
+          {template.title} Giveaway
+
+        </h1>
+
+
+
         <div
 
           className="overflow-hidden rounded-2xl border bg-[#101018]/95"

@@ -143,11 +143,16 @@ export function FreeCaseDetailPage({ slug }: Props) {
 
       <section className="relative mx-auto max-w-5xl">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <IconButton label="Back to all cases" disabled={opening} onClick={() => navigateApp('free-cases')}>
-            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
-              <path d="M11.78 3.22a.75.75 0 0 1 0 1.06L7.06 9l4.72 4.72a.75.75 0 1 1-1.06 1.06l-5.25-5.25a.75.75 0 0 1 0-1.06l5.25-5.25a.75.75 0 0 1 1.06 0z" />
-            </svg>
-          </IconButton>
+          <div className="flex min-w-0 items-center gap-3">
+            <IconButton label="Back to all cases" disabled={opening} onClick={() => navigateApp('free-cases')}>
+              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+                <path d="M11.78 3.22a.75.75 0 0 1 0 1.06L7.06 9l4.72 4.72a.75.75 0 1 1-1.06 1.06l-5.25-5.25a.75.75 0 0 1 0-1.06l5.25-5.25a.75.75 0 0 1 1.06 0z" />
+              </svg>
+            </IconButton>
+            <h1 className="truncate font-display text-lg font-black uppercase tracking-wide text-white sm:text-xl">
+              {rankLabelForTier(tier)} Free Case
+            </h1>
+          </div>
 
           <div className="flex items-center gap-2">
             <IconButton

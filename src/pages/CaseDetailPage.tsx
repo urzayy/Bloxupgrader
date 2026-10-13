@@ -200,12 +200,15 @@ export function CaseDetailPage({ slug, balance, onPurchase }: Props) {
       <div className="pointer-events-none absolute -right-16 top-24 h-72 w-72 rounded-full bg-fuchsia-600/10 blur-[100px]" />
 
       <section className="relative mx-auto max-w-6xl lg:max-w-7xl">
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <IconButton label="Back to cases" onClick={() => navigateApp('main')}>
             <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
               <path d="M11.78 3.22a.75.75 0 0 1 0 1.06L7.06 9l4.72 4.72a.75.75 0 1 1-1.06 1.06l-5.25-5.25a.75.75 0 0 1 0-1.06l5.25-5.25a.75.75 0 0 1 1.06 0z" />
             </svg>
           </IconButton>
+          <h1 className="font-display text-lg font-black uppercase tracking-wide text-white sm:text-xl">
+            {caseLabel}
+          </h1>
         </div>
 
         <div

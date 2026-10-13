@@ -759,10 +759,23 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  // Public pages must be indexable (Bing/Google). Keep APIs out of search.
-  if (req.path.startsWith('/api/')) {
+  // Public pages must be indexable (Bing/Google). Keep APIs + private app areas out.
+  const lowerPath = String(req.path || '').toLowerCase();
+  const isApi = lowerPath.startsWith('/api/');
+  const isPrivateApp =
+    lowerPath === '/admin'
+    || lowerPath.startsWith('/admin/')
+    || lowerPath === '/profile'
+    || lowerPath.startsWith('/profile/');
+  // Ephemeral battle rooms — not in sitemap; keep out of search.
+  const isBattleRoom =
+    lowerPath.startsWith('/case-battles/')
+    && lowerPath !== '/case-battles/create';
+  if (isApi) {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
     res.setHeader('Cache-Control', 'no-store');
+  } else if (isPrivateApp || isBattleRoom) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   } else {
     res.setHeader('X-Robots-Tag', 'index, follow');
   }
@@ -848,6 +861,9 @@ app.use('/api/', rateLimit({
   key: (_req, ip) => `api:${ip}`,
 }));
 
+// Block raw data / source paths from being fetched at the web root.
+// Do NOT list public SPA routes here (/giveaways, /case-battles) — those
+// share names with data dirs under DATA_DIR but must serve index.html.
 const BLOCKED_PATH_PREFIXES = [
   '/src',
   '/server',
@@ -864,8 +880,6 @@ const BLOCKED_PATH_PREFIXES = [
   '/site-state',
   '/account-resets',
   '/account-bans',
-  '/case-battles',
-  '/giveaways',
   '/promo-codes',
   '/announcements',
   '/profile-photos',
