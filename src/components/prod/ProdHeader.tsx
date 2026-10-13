@@ -476,10 +476,10 @@ export function Header({
 
       <div className={DEV_MOBILE_LAYOUT ? 'hidden lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-4' : 'contents'}>
       <div className="flex items-center gap-3 justify-self-start">
-        <p className="font-display text-lg font-bold tracking-[0.12em] uppercase">
+        <div className="font-display text-lg font-bold tracking-[0.12em] uppercase" aria-hidden="true">
           Blox<span className="text-gold">Upgrader</span>
           <span className="text-[11px] font-semibold tracking-normal text-white/40">.com</span>
-        </p>
+        </div>
 
         <div className="hidden items-center gap-2 sm:flex">
           <div className="flex items-center gap-1.5 rounded-lg border border-white/5 bg-panel/80 px-2.5 py-1">
