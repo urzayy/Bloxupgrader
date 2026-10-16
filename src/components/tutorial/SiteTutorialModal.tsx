@@ -52,8 +52,8 @@ const STEPS: TutorialStep[] = [
 
 const SHOWCASE = [
   { name: 'AUG | Hot Rod', price: 7, image: '/images/skins/aug-hot-rod.png' },
-  { name: 'AK-47 | Sakura', price: 659, image: '/images/skins/ak-47-sakura.png' },
-  { name: 'AWP | Tekko', price: 743, image: '/images/skins/awp-tekko.png' },
+  { name: 'AK-47 | Sakura', price: 501, image: '/images/skins/ak-47-sakura.png' },
+  { name: 'AWP | Tekko', price: 102, image: '/images/skins/awp-tekko.png' },
   { name: 'Karambit | Aurora', price: 229779, image: '/images/skins/karambit-aurora.png' },
 ];
 
