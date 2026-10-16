@@ -198,7 +198,7 @@ export function CaseBattleDetailPage({ battleId, balance }: Props) {
 
     if (!battle?.pendingRound) return;
 
-    const intervalId = window.setInterval(() => setNow(Date.now()), 100);
+    const intervalId = window.setInterval(() => setNow(Date.now()), 250);
 
     return () => window.clearInterval(intervalId);
 

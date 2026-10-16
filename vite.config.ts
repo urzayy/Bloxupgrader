@@ -14,6 +14,7 @@ import { caseBattlesPlugin } from './vite-case-battles-plugin';
 import { announcementPlugin } from './vite-announcement-plugin';
 import { adminEmailsPlugin } from './vite-admin-emails-plugin';
 import { presencePlugin } from './vite-presence-plugin';
+import { tutorialPlugin } from './vite-tutorial-plugin';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,20 +55,13 @@ export default defineConfig({
     siteStatePlugin(siteStateDir, userDbDir),
     adminEmailsPlugin(siteStateDir),
     presencePlugin(siteStateDir),
+    tutorialPlugin(siteStateDir),
   ],
   server: {
+    host: '127.0.0.1',
     port: 5173,
+    strictPort: true,
     open: false,
-    warmup: {
-      clientFiles: [
-        './src/main.tsx',
-        './src/App.tsx',
-        './src/DevApp.tsx',
-        './src/components/layout/Header.tsx',
-        './src/pages/MainPage.tsx',
-        './src/pages/UpgradePage.tsx',
-      ],
-    },
     watch: {
       ignored: [
         '**/src/lib/feedBot.mjs',

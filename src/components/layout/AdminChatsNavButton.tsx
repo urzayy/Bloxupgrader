@@ -58,7 +58,7 @@ export function AdminChatsNavButton({
         Chats
       </span>
       {attentionCount > 0 && (
-        <span className="absolute -right-0.5 -top-0.5 z-20 flex h-4 min-w-4 items-center justify-center rounded-full border border-deep bg-gold px-1 text-[9px] font-black leading-none text-deep shadow-[0_0_8px_rgba(176,108,255,0.45)]">
+        <span className="absolute -right-0.5 -top-0.5 z-20 flex h-4 min-w-4 items-center justify-center rounded-full border border-deep bg-gold px-1 text-[9px] font-black leading-none text-deep shadow-[0_0_8px_rgba(232,169,58,0.45)]">
           {attentionCount > 9 ? '9+' : attentionCount}
         </span>
       )}

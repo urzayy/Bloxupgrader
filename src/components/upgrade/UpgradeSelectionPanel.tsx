@@ -41,7 +41,7 @@ export function UpgradeSelectionPanel({
   const total = inventoryTotal(list);
 
   return (
-    <div className="relative flex min-h-[280px] flex-1 flex-col overflow-hidden rounded-2xl border border-violet-500/10 bg-[#141024]/80 p-4 sm:min-h-[320px] sm:p-5">
+    <div className="relative flex min-h-[280px] flex-1 flex-col overflow-hidden rounded-2xl border border-gold/10 bg-panel/80 p-4 sm:min-h-[320px] sm:p-5">
       {isInput && onTurboToggle && (
         <TurboToggleButton
           active={turbo}
@@ -85,21 +85,21 @@ export function UpgradeSelectionPanel({
           <button
             type="button"
             onClick={onRandom}
-            className="rounded-lg border border-white/10 bg-[#1a1530] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white/55 transition hover:border-violet-500/25 hover:text-white"
+            className="rounded-lg border border-white/10 bg-elevated px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white/55 transition hover:border-gold/25 hover:text-white"
           >
             Random
           </button>
           <button
             type="button"
             onClick={onSelectAll}
-            className="rounded-lg border border-white/10 bg-[#1a1530] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white/55 transition hover:border-violet-500/25 hover:text-white"
+            className="rounded-lg border border-white/10 bg-elevated px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white/55 transition hover:border-gold/25 hover:text-white"
           >
             Select all
           </button>
         </div>
       )}
 
-      <div className="relative z-10 mt-4 rounded-xl border border-white/[0.06] bg-[#100d1a]/90 px-3 py-2.5 text-center">
+      <div className="relative z-10 mt-4 rounded-xl border border-white/[0.06] bg-deep/90 px-3 py-2.5 text-center">
         {!hasSelection ? (
           <p className="text-[11px] font-medium text-white/35">Nothing selected</p>
         ) : isInput && list.length > 1 ? (
@@ -133,7 +133,7 @@ export function UpgradeSelectionPanel({
           type="button"
           disabled={!canUpgrade || spinning}
           onClick={onUpgrade}
-          className="relative z-10 mt-4 w-full rounded-xl bg-gradient-to-r from-[#ec4899] via-[#d946ef] to-[#a855f7] py-3.5 font-display text-sm font-black uppercase tracking-wide text-white shadow-[0_4px_28px_rgba(236,72,153,0.35)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35"
+          className="relative z-10 mt-4 w-full rounded-xl bg-gradient-to-r from-[#B8732A] via-[#E8A93A] to-[#F0C14D] py-3.5 font-display text-sm font-black uppercase tracking-wide text-deep shadow-[0_4px_28px_rgba(232,169,58,0.35)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35"
         >
           {spinning ? 'Rolling...' : requiresLogin && canUpgrade ? 'Log in' : 'Upgrade items'}
         </button>

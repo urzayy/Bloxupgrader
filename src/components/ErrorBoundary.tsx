@@ -24,13 +24,23 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-deep px-6 text-center text-white">
           <h1 className="font-display text-2xl font-bold text-gold">Something went wrong</h1>
+          {this.state.error?.message ? (
+            <pre className="max-w-xl whitespace-pre-wrap break-words rounded-lg bg-black/40 px-3 py-2 text-left text-xs text-red-300">
+              {this.state.error.message}
+              {this.state.error.stack ? `\n\n${this.state.error.stack}` : ''}
+            </pre>
+          ) : null}
           <p className="max-w-md text-sm text-white/60">
             Reload the page with <kbd className="rounded bg-white/10 px-1.5 py-0.5">Ctrl+Shift+R</kbd>
             {' '}to clear your browser cache.
           </p>
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              const url = new URL(window.location.href);
+              url.searchParams.set('_r', String(Date.now()));
+              window.location.replace(url.toString());
+            }}
             className="min-h-[44px] rounded-xl bg-gold px-6 py-2.5 font-display text-sm font-bold text-black"
           >
             Reload

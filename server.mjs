@@ -22,6 +22,7 @@ import { createAccountResetMarkerStore } from './server/lib/accountResetMarker.m
 import { createAccountBanStore } from './server/lib/accountBanStore.mjs';
 import { resolveDepositBonus, resolveRobuxDepositBonus, initPromoCodeStore } from './server/lib/depositBonus.mjs';
 import { createPromoCodeStore } from './server/lib/promoCodeStore.mjs';
+import { createTutorialIpStore } from './server/lib/tutorialIpStore.mjs';
 import { createAnnouncementStore } from './server/lib/announcementStore.mjs';
 import { createProfilePhotoStore } from './server/lib/profilePhotoStore.mjs';
 import { createGiveawayStore } from './server/lib/giveawayStore.mjs';
@@ -154,6 +155,15 @@ try {
 const userStore = createUserStore({ userDbDir: USER_DB_DIR, adminEmailsStore });
 const promoCodeStore = createPromoCodeStore(PROMO_CODES_DIR);
 initPromoCodeStore(promoCodeStore);
+const tutorialIpStore = createTutorialIpStore(STATE_DIR);
+
+function requestClientIp(req) {
+  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+  let ip = forwarded || req.socket?.remoteAddress || req.ip || 'unknown';
+  if (String(ip).startsWith('::ffff:')) ip = String(ip).slice(7);
+  if (ip === '::1') ip = '127.0.0.1';
+  return ip;
+}
 const announcementStore = createAnnouncementStore(ANNOUNCEMENTS_DIR);
 const announcementsDurable = durableDirs.find(entry => entry.key === 'announcements');
 const originalPublish = announcementStore.publish.bind(announcementStore);
@@ -1127,6 +1137,17 @@ app.post('/api/player-state/sync', async (_req, res) => {
     error: 'sync_disabled',
     message: 'Player state sync is disabled.',
   });
+});
+
+app.get('/api/tutorial/status', (req, res) => {
+  const ip = requestClientIp(req);
+  sendJson(res, 200, { seen: tutorialIpStore.hasSeen(ip) });
+});
+
+app.post('/api/tutorial/complete', (req, res) => {
+  const ip = requestClientIp(req);
+  tutorialIpStore.markSeen(ip);
+  sendJson(res, 200, { ok: true, seen: true });
 });
 
 app.get('/api/player-state/reset-pending', (req, res) => {

@@ -23,6 +23,8 @@ interface Props {
   minSubmitTotal?: number;
   checkoutTotal?: number;
   footerLeft?: ReactNode;
+  /** Optional row rendered above the search/filter toolbar. */
+  toolbarExtra?: ReactNode;
   onCartTotalChange?: (total: number) => void;
   validateSubmit?: (items: CatalogCartItem[], total: number) => { ok: boolean; error?: string };
   onSubmit: (items: CatalogCartItem[]) => boolean | void | Promise<boolean | void>;
@@ -50,6 +52,7 @@ export function SkinCatalogCart({
   minSubmitTotal,
   checkoutTotal,
   footerLeft,
+  toolbarExtra,
   onCartTotalChange,
   validateSubmit,
   onSubmit,
@@ -192,50 +195,57 @@ export function SkinCatalogCart({
 
   return (
     <div className={`flex min-h-0 flex-1 flex-col ${className}`}>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/5 px-2 py-2">
-        <select
-          value={weaponFilter}
-          onChange={e => {
-            setWeaponFilter(e.target.value);
-            setPage(0);
-          }}
-          className="input-filter max-w-[108px] py-1.5 text-[10px]"
-        >
-          {weapons.map(w => (
-            <option key={w} value={w}>{w === 'All' ? 'All weapons' : w}</option>
-          ))}
-        </select>
-        <input
-          type="number"
-          min={0}
-          value={minPrice}
-          onChange={e => { setMinPrice(e.target.value); setPage(0); }}
-          placeholder="Price"
-          className="input-filter w-[72px] py-1.5 text-[10px]"
-        />
-        <span className="text-[10px] text-white/35">hasta</span>
-        <input
-          type="number"
-          min={0}
-          value={maxPrice}
-          onChange={e => { setMaxPrice(e.target.value); setPage(0); }}
-          placeholder="Max"
-          className="input-filter w-[72px] py-1.5 text-[10px]"
-        />
-        <input
-          type="text"
-          value={search}
-          onChange={e => { setSearch(e.target.value); setPage(0); }}
-          placeholder="Search..."
-          className="input-filter min-w-[88px] flex-1 py-1.5 text-[10px]"
-        />
-        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gold/35 bg-gold/10 text-gold">
-          <CartIcon className="h-3.5 w-3.5" />
-          {cartCount > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-gold px-1 text-[8px] font-black text-deep">
-              {cartCount}
-            </span>
-          )}
+      <div className="shrink-0 border-b border-white/5 bg-[#0b0e13]/80">
+        {toolbarExtra && (
+          <div className="border-b border-white/5 px-2 py-2 sm:px-3">
+            {toolbarExtra}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2 px-2 py-2 sm:px-3">
+          <select
+            value={weaponFilter}
+            onChange={e => {
+              setWeaponFilter(e.target.value);
+              setPage(0);
+            }}
+            className="input-filter max-w-[108px] py-1.5 text-[10px]"
+          >
+            {weapons.map(w => (
+              <option key={w} value={w}>{w === 'All' ? 'All weapons' : w}</option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min={0}
+            value={minPrice}
+            onChange={e => { setMinPrice(e.target.value); setPage(0); }}
+            placeholder="Min"
+            className="input-filter w-[72px] py-1.5 text-[10px]"
+          />
+          <span className="text-[10px] text-white/35">hasta</span>
+          <input
+            type="number"
+            min={0}
+            value={maxPrice}
+            onChange={e => { setMaxPrice(e.target.value); setPage(0); }}
+            placeholder="Max"
+            className="input-filter w-[72px] py-1.5 text-[10px]"
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(0); }}
+            placeholder="Search..."
+            className="input-filter min-w-[88px] flex-1 py-1.5 text-[10px]"
+          />
+          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gold/35 bg-gold/10 text-gold">
+            <CartIcon className="h-3.5 w-3.5" />
+            {cartCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-gold px-1 text-[8px] font-black text-deep">
+                {cartCount}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

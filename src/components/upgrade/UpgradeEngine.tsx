@@ -163,9 +163,9 @@ export const UpgradeEngine = forwardRef<UpgradeEngineHandle, Props>(function Upg
           type="button"
           disabled={!canUpgrade || spinning}
           onClick={runUpgrade}
-          whileHover={canUpgrade && !spinning ? { scale: 1.02, boxShadow: '0 0 40px rgba(176,108,255,0.4)' } : {}}
+          whileHover={canUpgrade && !spinning ? { scale: 1.02, boxShadow: '0 0 40px rgba(232,169,58,0.4)' } : {}}
           whileTap={canUpgrade && !spinning ? { scale: 0.98 } : {}}
-          className="mt-2 w-full max-w-[280px] rounded-xl bg-gradient-to-r from-[#9333ea] via-[#b56bff] to-[#a855f7] py-3 font-display text-sm font-black tracking-wide text-white uppercase shadow-[0_4px_24px_rgba(176,108,255,0.35)] disabled:opacity-30 disabled:shadow-none max-lg:max-w-none max-lg:py-2.5 max-lg:text-xs"
+          className="mt-2 w-full max-w-[280px] rounded-xl bg-gradient-to-r from-[#B8732A] via-[#E8A93A] to-[#F0C14D] py-3 font-display text-sm font-black tracking-wide text-deep uppercase shadow-[0_4px_24px_rgba(232,169,58,0.35)] disabled:opacity-30 disabled:shadow-none max-lg:max-w-none max-lg:py-2.5 max-lg:text-xs"
         >
           {spinning ? 'ROLLING...' : requiresLogin && canUpgrade ? 'Sign in' : 'UPGRADE'}
         </motion.button>

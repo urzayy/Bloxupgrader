@@ -24,7 +24,7 @@ export function cleanHeaderShell(extra = ''): string {
 
   return [
 
-    'min-h-[76px]',
+    'min-h-[64px]',
 
     CLEAN_HEADER_BG,
 

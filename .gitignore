@@ -3,6 +3,16 @@ dist
 .env
 .env.local
 .env.*.local
+
+# Local BloxDB import artifacts (regenerate with npm run import:bloxdb)
+data/bloxdb/skins-raw.json
+data/bloxdb/last-import-report.json
+data/bloxdb/legacy-skins.ts.bak
+
+# Local backups / tooling noise
+DATABASE ANTIGUA/
+vite.config.ts.timestamp-*.mjs
+tsconfig.tsbuildinfo
 user-logs/*.txt
 !user-logs/README.md
 withdraw-chats/*.json

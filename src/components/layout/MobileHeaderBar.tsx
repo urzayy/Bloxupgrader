@@ -34,6 +34,8 @@ interface Props {
 
   onOpenWithdraw: () => void;
 
+  onOpenTutorial?: () => void;
+
   withdrawOpen: boolean;
 
 }
@@ -56,6 +58,8 @@ export function MobileHeaderBar({
 
   onOpenWithdraw,
 
+  onOpenTutorial,
+
   withdrawOpen,
 
 }: Props) {
@@ -68,7 +72,7 @@ export function MobileHeaderBar({
 
   return (
 
-    <div className={`z-40 flex flex-col border-b border-white/5 bg-[#0a0812]/95 px-3 py-2.5 backdrop-blur-xl xl:hidden ${
+    <div className={`z-40 flex flex-col border-b border-white/5 bg-deep/95 px-3 py-2.5 backdrop-blur-xl xl:hidden ${
 
       clean ? 'gap-2' : 'gap-2'
 
@@ -182,7 +186,17 @@ export function MobileHeaderBar({
 
           </div>
 
-          <DiscordLinkButton />
+          <DiscordLinkButton className="!px-1.5 !py-1 !text-[9px]" />
+
+          {onOpenTutorial && (
+            <button
+              type="button"
+              onClick={onOpenTutorial}
+              className="shrink-0 rounded-md border border-[#c084fc]/40 bg-[#c084fc]/10 px-2 py-1 font-display text-[9px] font-bold uppercase tracking-wide text-[#e9d5ff]"
+            >
+              Tutorial
+            </button>
+          )}
 
           <button
 
@@ -190,7 +204,7 @@ export function MobileHeaderBar({
 
             onClick={onOpenDeposit}
 
-            className="shrink-0 rounded-lg border border-gold/45 bg-gradient-to-r from-[#d8b4fe] via-[#c084fc] to-[#a855f7] px-3 py-2 font-display text-[10px] font-bold uppercase tracking-wide text-[#f5f0ff] shadow-[0_0_12px_rgba(176,108,255,0.2)]"
+            className="shrink-0 rounded-md border border-gold/45 bg-gradient-to-r from-[#B8732A] via-[#E8A93A] to-[#F0C14D] px-2 py-1 font-display text-[9px] font-bold uppercase tracking-wide text-deep shadow-[0_0_10px_rgba(232,169,58,0.22)]"
 
           >
 
@@ -204,7 +218,7 @@ export function MobileHeaderBar({
 
             onClick={onOpenWithdraw}
 
-            className={`shrink-0 rounded-lg border px-3 py-2 font-display text-[10px] font-bold uppercase tracking-wide text-white ${
+            className={`shrink-0 rounded-md border px-2 py-1 font-display text-[9px] font-bold uppercase tracking-wide text-white ${
 
               withdrawOpen ? 'border-white/40 bg-white/15' : 'border-white/20 bg-white/10'
 

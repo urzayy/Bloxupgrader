@@ -42,7 +42,7 @@ export function getBattleRoundDurationMs(
   );
 }
 
-const TICK_MS = 400;
+const TICK_MS = 1000;
 
 function createPendingRound(battle: CaseBattle): BattlePendingRound | null {
   const slug = battle.caseSlugs[battle.currentRound];
@@ -186,7 +186,7 @@ export function stopCaseBattleEngine(): void {
 }
 
 export function bootstrapCaseBattleEngine(userId: string | undefined): () => void {
-  const stopSync = startCaseBattlesServerSync(1500);
+  const stopSync = startCaseBattlesServerSync(4000);
   const stopEngine = startCaseBattleEngine(userId);
 
   return () => {

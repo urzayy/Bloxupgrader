@@ -30,7 +30,7 @@ export function SiteFooter({ registeredUsers }: Props) {
       : 0;
 
   return (
-    <footer className="mt-6 w-full shrink-0 border-t border-white/8 bg-[#0a0812]">
+    <footer className="mt-6 w-full shrink-0 border-t border-white/8 bg-deep">
       <div className="mx-auto max-w-[1920px] px-4 py-8 lg:px-8">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto] lg:items-start lg:gap-10 xl:gap-12">
           <div>

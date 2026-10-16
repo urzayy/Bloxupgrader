@@ -10,15 +10,16 @@ export default {
 
       colors: {
 
-        deep: '#0a0814',
+        // Obsidian cave base + ember accent (upgrade heat)
+        deep: '#080b10',
 
-        panel: '#141024',
+        panel: '#10161f',
 
-        elevated: '#1c1734',
+        elevated: '#181f2a',
 
-        gold: '#B56BFF',
+        gold: '#E8A93A',
 
-        'gold-dim': '#8F4FD6',
+        'gold-dim': '#C48928',
 
         risk: '#FF3344',
 
@@ -36,9 +37,9 @@ export default {
 
       boxShadow: {
 
-        gold: '0 0 40px rgba(176, 108, 255, 0.45)',
+        gold: '0 0 40px rgba(232, 169, 58, 0.4)',
 
-        'gold-lg': '0 0 80px rgba(176, 108, 255, 0.35)',
+        'gold-lg': '0 0 80px rgba(232, 169, 58, 0.3)',
 
         risk: '0 0 40px rgba(255, 51, 68, 0.5)',
 
@@ -60,9 +61,9 @@ export default {
 
         pointerPulse: {
 
-          '0%, 100%': { filter: 'drop-shadow(0 0 12px rgba(176,108,255,0.6))' },
+          '0%, 100%': { filter: 'drop-shadow(0 0 12px rgba(232,169,58,0.55))' },
 
-          '50%': { filter: 'drop-shadow(0 0 28px rgba(176,108,255,1)) drop-shadow(0 0 50px rgba(124,58,237,0.5))' },
+          '50%': { filter: 'drop-shadow(0 0 28px rgba(232,169,58,0.95)) drop-shadow(0 0 50px rgba(196,137,40,0.4))' },
 
         },
 
@@ -101,4 +102,3 @@ export default {
   plugins: [],
 
 };
-

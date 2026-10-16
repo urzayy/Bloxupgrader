@@ -259,7 +259,7 @@ function FeedSkinImage({
 }) {
   return (
     <div
-      className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-[#141024]"
+      className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-panel"
       style={{ borderColor: hexToRgba(theme.color, 0.4), boxShadow: `0 0 12px ${theme.glow}` }}
       title={alt}
     >

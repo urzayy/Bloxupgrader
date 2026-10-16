@@ -22,7 +22,7 @@ export function CaseBattlesPage({ balance }: { balance: number }) {
     setRefreshKey(key => key + 1);
 
     const sync = () => setRefreshKey(key => key + 1);
-    const intervalId = window.setInterval(sync, 2000);
+    const intervalId = window.setInterval(sync, 4000);
     window.addEventListener(BATTLES_UPDATED_EVENT, sync);
     window.addEventListener('storage', sync);
 

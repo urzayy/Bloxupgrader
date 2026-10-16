@@ -18,6 +18,8 @@ import { HeaderNavMenu } from './HeaderNavMenu';
 import { ProfileMenu } from './ProfileMenu';
 import { LogoutDoorButton } from './LogoutDoorButton';
 import { DiscordLinkButton } from '../ui/DiscordLinkButton';
+import { SiteTutorialModal } from '../tutorial/SiteTutorialModal';
+import { fetchTutorialStatus } from '../../lib/tutorialApi';
 import type { Skin } from '../../data/skins';
 
 const AdminSkinPicker = lazy(() =>
@@ -120,6 +122,8 @@ export function Header({
   const isCookiePage = useAppRoute() === 'cookie-policy';
   const isProvablyFairPage = useAppRoute() === 'provably-fair';
   const isScrollableHeader = isMainPage || isProfilePage || isUpgradePage || isFreeCasesPage || isGiveawaysPage || isCaseBattlesPage || isAdminPage || isTermsPage || isPrivacyPage || isCookiePage || isProvablyFairPage;
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [tutorialMarkSeen, setTutorialMarkSeen] = useState(true);
   const [adminOpen, setAdminOpen] = useState(false);
   const [giftOpen, setGiftOpen] = useState(false);
   const [giftMoneyOpen, setGiftMoneyOpen] = useState(false);
@@ -190,6 +194,23 @@ export function Header({
     registerOpenWithdrawHandler(openWithdrawFlow);
     return () => registerOpenWithdrawHandler(null);
   }, [openWithdrawFlow]);
+
+  const openTutorial = useCallback((opts?: { markSeen?: boolean }) => {
+    setTutorialMarkSeen(opts?.markSeen !== false);
+    setTutorialOpen(true);
+  }, []);
+
+  // Auto-show for new IPs only when the visitor is not logged in / registered.
+  useEffect(() => {
+    if (user) return;
+    let cancelled = false;
+    void fetchTutorialStatus().then(({ seen }) => {
+      if (cancelled || seen) return;
+      setTutorialMarkSeen(true);
+      setTutorialOpen(true);
+    });
+    return () => { cancelled = true; };
+  }, [user]);
 
   const openSeePanel = useCallback((email = '') => {
     setSeeTargetEmail(email.trim());
@@ -363,8 +384,11 @@ export function Header({
         open={depositMethodOpen}
         onClose={() => setDepositMethodOpen(false)}
         onSelectRobux={() => setRobuxDepositOpen(true)}
-        onSelectSkins={() => setDepositOpen(true)}
-        onSelectCash={() => setCashDepositOpen(true)}
+        onRequestDeposit={async (items, bonus) => {
+          const bundle = await onDepositRequest(items, bonus);
+          if (bundle) openSupportChat(bundle.ticket.id, bundle);
+          return bundle;
+        }}
       />
       ) : null}
       {onRobuxDepositRequest && robuxDepositOpen ? (
@@ -479,7 +503,7 @@ export function Header({
 
       <header className={
         DEV_MOBILE_LAYOUT
-          ? `${isScrollableHeader ? 'relative' : 'sticky top-0'} z-50 border-b backdrop-blur-xl max-xl:border-white/5 max-xl:bg-[#0a0812]/90 xl:px-4 ${
+          ? `${isScrollableHeader ? 'relative' : 'sticky top-0'} z-50 border-b backdrop-blur-xl max-xl:border-white/5 max-xl:bg-deep/90 xl:px-4 ${
             DEV_CLEAN_HEADER_LAYOUT
               ? cleanHeaderShell('xl:px-6 2xl:px-10')
               : 'border-white/5 bg-deep/90 xl:py-3'
@@ -501,6 +525,7 @@ export function Header({
           onOpenLogin={openLogin}
           onOpenDeposit={openDepositFlow}
           onOpenWithdraw={() => openWithdrawFlow()}
+          onOpenTutorial={() => openTutorial({ markSeen: false })}
         />
       )}
 
@@ -591,10 +616,10 @@ export function Header({
                   }}
                   className={`relative hidden shrink-0 rounded-md border font-display font-bold uppercase transition xl:inline-flex ${
                     DEV_CLEAN_HEADER_LAYOUT
-                      ? 'px-2.5 py-2 text-[10px] tracking-[0.08em] 2xl:px-4 2xl:py-2.5 2xl:text-xs 2xl:tracking-[0.1em]'
-                      : 'px-3 py-1.5 text-[10px] tracking-[0.12em] backdrop-blur-xl'
+                      ? 'px-2 py-1 text-[9px] tracking-[0.08em] 2xl:px-2.5 2xl:py-1.5 2xl:text-[10px]'
+                      : 'px-2.5 py-1 text-[10px] tracking-[0.12em] backdrop-blur-xl'
                   } ${
-                    openLiveChatCount > 0 ? (DEV_CLEAN_HEADER_LAYOUT ? 'pr-5 2xl:pr-6' : 'pr-7') : ''
+                    openLiveChatCount > 0 ? (DEV_CLEAN_HEADER_LAYOUT ? 'pr-4 2xl:pr-5' : 'pr-6') : ''
                   } ${
                     liveChatsOpen
                       ? DEV_CLEAN_HEADER_LAYOUT
@@ -608,7 +633,7 @@ export function Header({
                   <span className="2xl:hidden">Chats</span>
                   <span className="hidden 2xl:inline">Live Chats</span>
                   {openLiveChatCount > 0 && (
-                    <span className={`absolute right-1 top-1 flex items-center justify-center rounded-full bg-gold font-black leading-none text-deep shadow-[0_0_6px_rgba(176,108,255,0.5)] ${
+                    <span className={`absolute right-1 top-1 flex items-center justify-center rounded-full bg-gold font-black leading-none text-deep shadow-[0_0_6px_rgba(232,169,58,0.5)] ${
                       DEV_CLEAN_HEADER_LAYOUT ? 'h-3.5 min-w-3.5 px-0.5 text-[8px]' : 'h-4 min-w-4 px-1 text-[9px]'
                     }`}
                     >
@@ -620,25 +645,32 @@ export function Header({
               {DEV_CLEAN_HEADER_LAYOUT && (
                 <>
                   <Stat label="BALANCE" value={balance} slim cleanChip />
-                  <DiscordLinkButton />
+                  <DiscordLinkButton className="!px-1.5 !py-1 !text-[9px] 2xl:!px-2" />
                 </>
               )}
             <button
               type="button"
-              onClick={openDepositFlow}
-              className={`group relative shrink-0 overflow-hidden rounded-md border border-gold/45 font-display font-bold uppercase text-[#f5f0ff] shadow-[0_0_20px_rgba(176,108,255,0.3),inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-xl transition hover:border-gold hover:shadow-[0_0_32px_rgba(176,108,255,0.5),inset_0_1px_0_rgba(255,255,255,0.45)] ${
+              onClick={() => openTutorial({ markSeen: false })}
+              className={`shrink-0 rounded-md border border-[#c084fc]/40 bg-[#c084fc]/10 font-display font-bold uppercase text-[#e9d5ff] transition hover:border-[#c084fc]/65 hover:bg-[#c084fc]/18 ${
                 DEV_CLEAN_HEADER_LAYOUT
-                  ? 'px-3 py-2 text-[10px] tracking-[0.08em] 2xl:px-5 2xl:py-2.5 2xl:text-xs 2xl:tracking-[0.1em]'
-                  : 'px-3.5 py-1.5 text-[11px] tracking-[0.14em]'
+                  ? 'px-2 py-1 text-[9px] tracking-[0.08em] 2xl:px-2.5 2xl:py-1.5 2xl:text-[10px]'
+                  : 'px-2.5 py-1 text-[10px] tracking-[0.12em]'
+              }`}
+            >
+              Tutorial
+            </button>
+            <button
+              type="button"
+              onClick={openDepositFlow}
+              className={`group relative shrink-0 overflow-hidden rounded-md border border-gold/45 font-display font-bold uppercase text-deep shadow-[0_0_12px_rgba(232,169,58,0.25),inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-xl transition hover:border-gold hover:shadow-[0_0_20px_rgba(232,169,58,0.4),inset_0_1px_0_rgba(255,255,255,0.45)] ${
+                DEV_CLEAN_HEADER_LAYOUT
+                  ? 'px-2 py-1 text-[9px] tracking-[0.08em] 2xl:px-2.5 2xl:py-1.5 2xl:text-[10px]'
+                  : 'px-2.5 py-1 text-[10px] tracking-[0.12em]'
               }`}
             >
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#d8b4fe] via-[#c084fc] to-[#a855f7] opacity-95"
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -inset-1 bg-gold/40 blur-xl transition group-hover:bg-gold/55"
+                className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#B8732A] via-[#E8A93A] to-[#F0C14D] opacity-95"
               />
               <span className="relative z-10 drop-shadow-[0_1px_0_rgba(255,255,255,0.35)]">
                 Deposit
@@ -647,10 +679,10 @@ export function Header({
             <button
                 type="button"
                 onClick={() => openWithdrawFlow()}
-                className={`group relative shrink-0 overflow-hidden rounded-md border font-display font-bold uppercase text-white shadow-[0_0_16px_rgba(255,255,255,0.1),inset_0_1px_0_rgba(255,255,255,0.2)] backdrop-blur-xl transition hover:border-white/35 hover:shadow-[0_0_24px_rgba(255,255,255,0.18),inset_0_1px_0_rgba(255,255,255,0.28)] ${
+                className={`group relative shrink-0 overflow-hidden rounded-md border font-display font-bold uppercase text-white shadow-[0_0_10px_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.2)] backdrop-blur-xl transition hover:border-white/35 ${
                   DEV_CLEAN_HEADER_LAYOUT
-                    ? 'px-3 py-2 text-[10px] tracking-[0.08em] 2xl:px-5 2xl:py-2.5 2xl:text-xs 2xl:tracking-[0.1em]'
-                    : 'px-3.5 py-1.5 text-[11px] tracking-[0.14em]'
+                    ? 'px-2 py-1 text-[9px] tracking-[0.08em] 2xl:px-2.5 2xl:py-1.5 2xl:text-[10px]'
+                    : 'px-2.5 py-1 text-[10px] tracking-[0.12em]'
                 } ${
                   withdrawOpen ? 'border-white/40' : 'border-white/20'
                 }`}
@@ -658,10 +690,6 @@ export function Header({
                 <span
                   aria-hidden="true"
                   className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/10 via-white/20 to-white/10 opacity-90"
-                />
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute -inset-1 bg-white/15 blur-xl transition group-hover:bg-white/25"
                 />
                 <span className="relative z-10 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]">
                   Withdraw
@@ -672,17 +700,31 @@ export function Header({
             <LogoutDoorButton />
           </>
         ) : (
-          <button
-            type="button"
-            onClick={openLogin}
-            className="rounded-lg border border-gold/30 bg-gold/10 px-4 py-2 text-sm font-semibold text-gold transition hover:border-gold hover:bg-gold/15"
-          >
-            Login
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => openTutorial({ markSeen: false })}
+              className="rounded-md border border-[#c084fc]/40 bg-[#c084fc]/10 px-2 py-1 font-display text-[9px] font-bold uppercase tracking-wide text-[#e9d5ff] transition hover:border-[#c084fc]/65"
+            >
+              Tutorial
+            </button>
+            <button
+              type="button"
+              onClick={openLogin}
+              className="rounded-md border border-gold/30 bg-gold/10 px-2.5 py-1 text-[11px] font-semibold text-gold transition hover:border-gold hover:bg-gold/15"
+            >
+              Login
+            </button>
+          </div>
         )}
       </div>
       </div>
     </header>
+    <SiteTutorialModal
+      open={tutorialOpen}
+      markSeenOnClose={tutorialMarkSeen}
+      onClose={() => setTutorialOpen(false)}
+    />
     </>
   );
 }
@@ -705,10 +747,10 @@ function Stat({
   return (
     <div className={`flex items-center rounded-md border ${
       cleanChip
-        ? `gap-1.5 px-3 py-2.5 ${cleanHeaderChip(false)}`
+        ? `gap-1 px-2 py-1.5 ${cleanHeaderChip(false)}`
         : `bg-[#1a1e28]/90 ${
           slim
-            ? 'gap-1 border-white/[0.08] px-2 py-1.5'
+            ? 'gap-1 border-white/[0.08] px-1.5 py-1'
             : comfortable
               ? 'gap-1.5 border-white/[0.08] px-3.5 py-2'
               : compact
@@ -718,7 +760,7 @@ function Stat({
     }`}
     >
       <span className={`font-semibold tracking-wide uppercase ${
-        cleanChip ? 'text-[10px] text-white/45' : 'text-white/40'
+        cleanChip ? 'text-[9px] text-white/45' : 'text-white/40'
       } ${
         slim && !cleanChip ? 'text-[8px]' : comfortable ? 'text-[10px]' : compact ? 'text-[7px]' : 'text-[8px]'
       }`}
@@ -727,9 +769,9 @@ function Stat({
       </span>
       <CoinPrice
         value={value}
-        iconClassName={cleanChip ? 'h-4 w-4' : slim ? 'h-3 w-3' : comfortable ? 'h-3.5 w-3.5' : compact ? 'h-2.5 w-2.5' : 'h-3 w-3'}
+        iconClassName={cleanChip ? 'h-3.5 w-3.5' : slim ? 'h-3 w-3' : comfortable ? 'h-3.5 w-3.5' : compact ? 'h-2.5 w-2.5' : 'h-3 w-3'}
         textClassName={`font-display font-bold text-gold ${
-          cleanChip ? 'text-sm' : slim ? 'text-[10px]' : comfortable ? 'text-xs' : compact ? 'text-[10px]' : 'text-[11px]'
+          cleanChip ? 'text-xs' : slim ? 'text-[10px]' : comfortable ? 'text-xs' : compact ? 'text-[10px]' : 'text-[11px]'
         }`}
       />
     </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
@@ -93,7 +93,7 @@ function MobileNavDrawerPanel({ open, onClose }: DrawerProps) {
             role="dialog"
             aria-modal="true"
             aria-label="Navigation menu"
-            className="absolute inset-y-0 left-0 flex w-[min(18rem,88vw)] flex-col border-r border-violet-500/20 bg-[#0a0812] shadow-[8px_0_40px_rgba(0,0,0,0.65)]"
+            className="absolute inset-y-0 left-0 flex w-[min(18rem,88vw)] flex-col border-r border-gold/20 bg-deep shadow-[8px_0_40px_rgba(0,0,0,0.65)]"
             style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
@@ -113,7 +113,7 @@ function MobileNavDrawerPanel({ open, onClose }: DrawerProps) {
                 type="button"
                 onClick={onClose}
                 aria-label="Close menu"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/60 transition hover:border-violet-500/30 hover:bg-violet-500/10 hover:text-white"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/60 transition hover:border-gold/30 hover:bg-gold/10 hover:text-white"
               >
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
                   <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -135,14 +135,14 @@ function MobileNavDrawerPanel({ open, onClose }: DrawerProps) {
                           item.available ? 'cursor-pointer' : 'cursor-default opacity-50'
                         } ${
                           active
-                            ? 'border-violet-500/35 bg-violet-500/[0.14] shadow-[0_0_24px_rgba(176,108,255,0.2)]'
+                            ? 'border-gold/35 bg-gold/[0.14] shadow-[0_0_24px_rgba(232,169,58,0.2)]'
                             : 'border-transparent bg-transparent hover:border-white/8 hover:bg-white/[0.04]'
                         }`}
                       >
                         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${
                           active
-                            ? 'border-violet-500/30 bg-violet-500/10'
-                            : 'border-white/8 bg-white/[0.03] group-hover:border-violet-500/20'
+                            ? 'border-gold/30 bg-gold/10'
+                            : 'border-white/8 bg-white/[0.03] group-hover:border-gold/20'
                         }`}
                         >
                           {item.icon}
@@ -161,7 +161,7 @@ function MobileNavDrawerPanel({ open, onClose }: DrawerProps) {
                           )}
                         </span>
                         {active && (
-                          <span className="h-2 w-2 shrink-0 rounded-full bg-gold shadow-[0_0_8px_rgba(176,108,255,0.8)]" />
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-gold shadow-[0_0_8px_rgba(232,169,58,0.8)]" />
                         )}
                       </button>
                       {isAdmin && item.id === 'admin' && (
@@ -178,7 +178,7 @@ function MobileNavDrawerPanel({ open, onClose }: DrawerProps) {
                               Chats
                             </span>
                             <span className="mt-0.5 block truncate text-[11px] text-white/35 group-hover:text-white/50">
-                              Live chat inbox — deposits and withdrawals
+                              Live chat inbox â€” deposits and withdrawals
                             </span>
                           </span>
                           {adminChatAttentionCount > 0 && (
@@ -222,7 +222,7 @@ export function MobileNavMenuButton({ className = '' }: { className?: string }) 
         aria-label="Open navigation menu"
         aria-expanded={open}
         aria-controls="mobile-nav-drawer"
-        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/80 transition hover:border-violet-500/35 hover:bg-violet-500/10 hover:text-white xl:hidden ${className}`}
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/80 transition hover:border-gold/35 hover:bg-gold/10 hover:text-white xl:hidden ${className}`}
       >
         <HamburgerIcon />
       </button>

@@ -16,8 +16,8 @@ export function UpgradeMultiplierBar({ multiplier, onMultiplier, disabled = fals
           onClick={() => onMultiplier(m)}
           className={`min-w-[52px] rounded-lg border px-3 py-1.5 font-display text-[11px] font-bold transition ${
             multiplier === m
-              ? 'border-gold bg-gold/20 text-gold shadow-[0_0_16px_rgba(176,108,255,0.3)]'
-              : 'border-white/10 bg-[#1a1530] text-white/60 hover:border-violet-500/30 hover:text-white'
+              ? 'border-gold bg-gold/20 text-gold shadow-[0_0_16px_rgba(232,169,58,0.3)]'
+              : 'border-white/10 bg-elevated text-white/60 hover:border-gold/30 hover:text-white'
           }`}
         >
           {m}x

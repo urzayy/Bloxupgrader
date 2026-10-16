@@ -4,10 +4,15 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
-const SKINS_TS = path.join(ROOT, 'src', 'data', 'skins.ts');
+const SKINS_TS = path.join(ROOT, 'src', 'data', 'skinCatalog.generated.ts');
 const OUT = path.join(ROOT, 'src', 'lib', 'feedBot.mjs');
 
 const SKIN_RE = /\{\s*id:\s*'[^']+',\s*name:\s*'([^']+)',\s*weapon:\s*'([^']+)',\s*rarity:\s*'[^']+',\s*wear:\s*'[^']+',\s*price:\s*(\d+),\s*image:\s*'([^']+)'\s*\}/g;
+
+if (!fs.existsSync(SKINS_TS)) {
+  console.error('[generate-feed-catalog] Missing src/data/skinCatalog.generated.ts — run npm run import:bloxdb first');
+  process.exit(1);
+}
 
 const src = fs.readFileSync(SKINS_TS, 'utf8');
 const catalog = [];
@@ -26,7 +31,7 @@ if (catalog.length < 100) {
   process.exit(1);
 }
 
-const out = `// Auto-generated from src/data/skins.ts — do not edit by hand.
+const out = `// Auto-generated from src/data/skinCatalog.generated.ts — do not edit by hand.
 // Run: node scripts/generate-feed-catalog.mjs
 
 export const FEED_SKIN_CATALOG = ${JSON.stringify(catalog, null, 2)};

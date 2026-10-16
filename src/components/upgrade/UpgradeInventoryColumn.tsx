@@ -45,8 +45,8 @@ export function UpgradeInventoryColumn({
   }, [skins, sortDir]);
 
   return (
-    <section className="flex min-h-[360px] flex-col overflow-hidden rounded-2xl border border-violet-500/10 bg-[#141024]/90 lg:min-h-[420px]">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-violet-500/10 bg-gradient-to-r from-violet-500/[0.08] to-transparent px-4 py-3">
+    <section className="flex min-h-[360px] flex-col overflow-hidden rounded-2xl border border-gold/10 bg-panel/90 lg:min-h-[420px]">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gold/10 bg-gradient-to-r from-gold/[0.08] to-transparent px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <PanelTabButton
             active={view === 'inventory'}
@@ -68,13 +68,13 @@ export function UpgradeInventoryColumn({
           <select
             value={sortDir}
             onChange={e => setSortDir(e.target.value as SortDir)}
-            className="rounded-lg border border-white/10 bg-[#1a1530] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white/60 outline-none"
+            className="rounded-lg border border-white/10 bg-elevated px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white/60 outline-none"
           >
             <option value="desc">Price ↓</option>
             <option value="asc">Price ↑</option>
           </select>
         ) : (
-          <div className="flex items-center gap-2 rounded-lg border border-gold/30 bg-gradient-to-r from-gold/10 via-gold/5 to-transparent px-2.5 py-1.5 shadow-[0_0_18px_rgba(176,108,255,0.12)]">
+          <div className="flex items-center gap-2 rounded-lg border border-gold/30 bg-gradient-to-r from-gold/10 via-gold/5 to-transparent px-2.5 py-1.5 shadow-[0_0_18px_rgba(232,169,58,0.12)]">
             <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-white/45">Balance</span>
             <CoinPrice
               value={balance}
@@ -95,14 +95,14 @@ export function UpgradeInventoryColumn({
                 <button
                   type="button"
                   onClick={() => navigateApp('main')}
-                  className="rounded-full bg-gradient-to-r from-[#ec4899] via-[#d946ef] to-[#c026d3] px-8 py-3 font-display text-xs font-black uppercase tracking-[0.12em] text-white shadow-[0_4px_28px_rgba(236,72,153,0.4)] transition hover:brightness-110"
+                  className="rounded-full bg-gradient-to-r from-[#B8732A] via-[#E8A93A] to-[#F0C14D] px-8 py-3 font-display text-xs font-black uppercase tracking-[0.12em] text-deep shadow-[0_4px_28px_rgba(232,169,58,0.4)] transition hover:brightness-110"
                 >
                   Open cases
                 </button>
                 <button
                   type="button"
                   onClick={() => setView('shop')}
-                  className="rounded-full border border-violet-500/30 bg-violet-500/10 px-8 py-3 font-display text-xs font-black uppercase tracking-[0.12em] text-violet-200 transition hover:border-violet-500/50 hover:bg-violet-500/20"
+                  className="rounded-full border border-gold/30 bg-gold/10 px-8 py-3 font-display text-xs font-black uppercase tracking-[0.12em] text-gold transition hover:border-gold/50 hover:bg-gold/20"
                 >
                   Shop
                 </button>

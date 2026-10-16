@@ -22,9 +22,9 @@ import { FreeCasePortada } from '../components/freecases/FreeCaseCover';
 import { CaseCatalogFilterBar } from '../components/cases/CaseCatalogFilterBar';
 import { CaseCatalogSection } from '../components/cases/CaseCatalogSection';
 import { scrollToPageTop, scrollToSectionById } from '../lib/scrollToSection';
-const CAVE_BANNER_URL = '/upgradercave.jpg';
-const BANNER_WIDTH = 2172;
-const BANNER_HEIGHT = 724;
+const CAVE_BANNER_URL = '/upgradercave.png';
+const BANNER_WIDTH = 2078;
+const BANNER_HEIGHT = 757;
 
 function CaseCatalogCard({
   item,
@@ -176,8 +176,8 @@ export function MainPage({ balance }: { balance: number }) {
 
   return (
     <div className="w-full pb-10 max-lg:pb-28">
-      <section className="relative mx-auto mb-3 w-full max-w-[1520px] px-2 sm:mb-6 sm:px-3 lg:px-4">
-        <div className="relative aspect-[16/7] w-full overflow-hidden rounded-xl sm:aspect-[2172/724]">
+      <section className="relative mx-auto mb-3 mt-3 w-full max-w-[1520px] px-2 sm:mb-6 sm:mt-4 sm:px-3 lg:mt-5 lg:px-4">
+        <div className="relative aspect-[16/7] w-full overflow-hidden rounded-xl sm:aspect-[2078/757]">
           <img
             src={CAVE_BANNER_URL}
             width={BANNER_WIDTH}

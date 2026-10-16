@@ -52,18 +52,8 @@ export function HeaderNavMenu({
             onClick={() => handleClick(item)}
             className={`group relative flex shrink-0 items-center rounded-lg px-2 py-2 transition 2xl:gap-2 2xl:px-3 ${
               item.available ? 'cursor-pointer' : 'cursor-default opacity-50'
-            } ${
-              active
-                ? 'bg-violet-500/[0.12] shadow-[0_0_22px_rgba(176,108,255,0.28)]'
-                : 'hover:bg-white/[0.03]'
-            }`}
+            } ${active ? '' : 'hover:bg-white/[0.03]'}`}
           >
-            {active && (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-lg bg-[radial-gradient(ellipse_at_center,rgba(176,108,255,0.22),transparent_72%)]"
-              />
-            )}
             <span className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center sm:h-7 sm:w-7">
               {item.icon}
             </span>
@@ -72,12 +62,18 @@ export function HeaderNavMenu({
                 compact ? 'text-[10px]' : 'hidden text-[11px] 2xl:inline 2xl:text-xs'
               } ${
                 active
-                  ? 'text-[#e4d4ff]'
+                  ? 'text-white'
                   : 'text-white/40 group-hover:text-white/65'
               }`}
             >
               {item.label}
             </span>
+            {active && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-2 -bottom-0.5 h-[2px] rounded-full bg-[#c084fc] shadow-[0_0_8px_2px_rgba(192,132,252,0.85),0_0_18px_4px_rgba(168,85,247,0.55)]"
+              />
+            )}
           </button>
         );
       })}

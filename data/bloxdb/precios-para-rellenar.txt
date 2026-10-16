@@ -1,0 +1,362 @@
+Skin | precio
+Karambit | Frostbite 120939
+Karambit | Noir 108000
+Flip | Aurora 46674
+Flip | Frostbite 29806
+Gut | Noir 21937
+Gut | Aurora 21873
+Flip | Noir 22255
+Gut | Frostbite 28423
+Stiletto | Safari 2728
+Karambit | Fade 11461
+Karambit | Tiger Stripes 10712
+Karambit | Aurora 229779
+Butterfly | Fade 9016
+Butterfly | Tiger Stripes 12929
+Bayonet | Fade 6226
+Sports Gloves | Imperial 16684
+Bayonet | Tiger Stripes 7894
+Sports Gloves | Malibu 15294
+Karambit | Scarlet 13511
+Stiletto | Violet 4050
+Bayonet | Scarlet 9028
+Skeleton | Fade 5177
+Karambit | Vanilla 5967
+Butterfly | Scarlet 7565
+Operator Gloves | Fade 10238
+Karambit | Damascus 5162
+Butterfly | Damascus 4806
+Sports Gloves | Tidal 6373
+Karambit | Rusted 3934
+Karambit | Blackwidow 5558
+Stiletto | Tiger Stripes 5383
+Flip | Fade 4606
+Operator Gloves | Black Widow 4511
+Flip | Tiger Stripes 5038
+Skeleton | Scarlet 4407
+Sports Gloves | Labyrinth 9279
+Karambit | Violet 4015
+Operator Gloves | Hellwire 6394
+Sports Gloves | Racer 6829
+AWP | Beta 2071
+Butterfly | Vanilla 4680
+Stiletto | Blackwidow 6223
+Butterfly | Rusted 3864
+Bayonet | Damascus 3825
+Flip | Scarlet 3898
+Karambit | Doodle 3562
+Butterfly | Doodle 3464
+Karambit | Whiteout 4908
+Karambit | Naval 4064
+Karambit | Midnight 4982
+Bayonet | Vanilla 3418
+Karambit | Woodland 3850
+Driver Gloves | Snow Leopard 6298
+Karambit | Safari 3276
+Operator Gloves | Emerald Widow 4036
+Flip | Damascus 2832
+Skeleton | Vanilla 2800
+Gut | Fade 2903
+Bayonet | Rusted 2828
+Sports Gloves | Freshmint 6471
+Bayonet | Blackwidow 4550
+Sports Gloves | Bumblebee 3743
+Hand Wraps | Bandage 4202
+Package | M4A1-S | Anodized Red 900
+Bayonet | Violet 3082
+Sports Gloves | Blackout 4798
+Hand Wraps | Aztec 5867
+Bayonet | Naval 3051
+Operator Gloves | Reinforced 3884
+Hand Wraps | Meander 4033
+Gut | Tiger Stripes 2692
+Bayonet | Whiteout 4064
+Operator Gloves | Smoke 3425
+Butterfly | Violet 4585
+Operator Gloves | Bumblebee 2546
+Bayonet | Doodle 2707
+Stiletto | Vanilla 2634
+Butterfly | Naval 4081
+Butterfly | Woodland 3413
+Skeleton | Blackwidow 2714
+Driver Gloves | Cobra 4355
+Butterfly | Midnight 3304
+Butterfly | Whiteout 3385
+Skeleton | Whiteout 3227
+Bayonet | Midnight 2462
+Butterfly | Safari 3098
+Bayonet | Safari 2462
+Driver Gloves | Cardinal 2777
+Gut | Scarlet 2375
+Skeleton | Naval 2363
+Stiletto | Doodle 2526
+Flip | Blackwidow 2828
+Hand Wraps | Crime Scene 2569
+Stiletto | Damascus 3008
+Operator Gloves | Agent 2673
+Driver Gloves | Leopard 6298
+Skeleton | Violet 2740
+Stiletto | Woodland 4286
+Flip | Vanilla 2198
+Gut | Damascus 1721
+Skeleton | Safari 2497
+Operator Gloves | Amber Fade 3258
+Stiletto | Midnight 3853
+Skeleton | Midnight 2567
+Sports Gloves | Dune 2931
+Flip | Doodle 2587
+Flip | Rusted 1988
+Package | AUG | Anodized Red 900
+Driver Gloves | Cardinal Weave 2777
+Flip | Naval 2283
+Flip | Midnight 2084
+Flip | Whiteout 2171
+Bayonet | Woodland 2819
+Stiletto | Rusted 2448
+Driver Gloves | Tuxedo 2704
+Flip | Woodland 1732
+Flip | Safari 1901
+Gut | Vanilla 1686
+Sports Gloves | Hunter 1865
+Flip | Violet 2197
+Package | Desert Eagle | High Octane 900
+Skeleton | Woodland 2372
+AWP | Metamorphosis 1794
+Driver Gloves | Nomad 1729
+Gut | Doodle 1621
+Package | AWP | High Octane 900
+Gut | Blackwidow 1646
+Driver Gloves | Gator 1937
+Gut | Violet 1808
+Gut | Whiteout 1604
+Gut | Naval 1693
+Driver Gloves | Tartan 1743
+Hand Wraps | Snakeskin 1939
+Gut | Midnight 1622
+Driver Gloves | Midnight Weave 1731
+Operator Gloves | Hunter 1776
+Hand Wraps | Taped 1878
+Gut | Safari 1533
+Hand Wraps | Camouflage 1880
+Hand Wraps | Checkers 1934
+Gut | Rusted 1921
+Package | MP-9 | Anodized Red 423
+Gut | Woodland 1792
+Hand Wraps | Hunter 1656
+Hand Wraps | Carpet 1712
+M4A1-S | Anodized Red 1355
+Package | MP9 | High Octane 555
+Package | AK-47 | Midas 531
+Package | Tec-9 | Medal.tv 314
+Package | AWP | Tekko 358
+AWP | High Octane 1004
+Package | M4A4 | Tekko 365
+Glock-18 | Aurora 828
+Package | USP-S | Tekko 373
+Package | AK-47 | PinPoint 132
+Desert Eagle | High Octane 658
+AK-47 | Sakura 659
+AWP | Tekko 743
+AK-47 | Luminex 524
+AWP | Overdrive 391
+AK-47 | PinPoint 809
+AK-47 | Midas 703
+M4A1-S | SuperSoaked 516
+MP9 | Anodized Red 483
+AUG | Anodized Red 440
+M4A4 | Tekko 471
+Package | Glock-18 | Midas 311
+USP-S | Tekko 569
+Package | P90 | PinPoint 231
+FAMAS | Heirloom :597
+Package | Glock-18 | PinPoint :
+M4A1-S | Phaseprint :387
+AWP | Bird Hunt :222
+MP9 | High Octane :420
+USP-S | SuperSoaked :840
+Package | MAC-10 | Midas :540
+M4A1-S | Retro :314
+M4A1-S | Castroil :88
+Sawed-Off | SuperSoaked :279
+M4A1-S | Orchids :260
+Glock-18 | PinPoint :215
+M4A4 | B-Hop :210
+P90 | PinPoint :195
+MP9 | X-Ray :329
+Desert Eagle | Permafrost :202
+FAMAS | Mind :1277
+M4A4 | BubblePop :103
+Galil AR | Irid :69
+P90 | Chromatic :509
+SSG-08 | Onyx :629
+Tec-9 | Medal.tv :54
+Glock-18 | Midas :894
+AWP | Railgun :140
+SSG-08 | Mindspill :285
+Case | Finishline Case : 50
+Case | Lionheart : 50
+Case | Glove Case 2 : 50
+Case | Glove Case : 50
+USP-S | Ajax :368
+M4A4 | Ignition :103
+Case | Case #1 : 50
+Case | Chrysalis : 50
+P90 | DRFT :365
+AWP | Typhon :166
+Desert Eagle | Mercy :130
+Glock-18 | Fade :123
+MAC-10 | Midas :66
+AK-47 | Aniki :105
+Desert Eagle | Racer8 :173
+Dual Berettas | Choking Hazard :46
+M4A4 | Wrapped :138
+Five-SeveN | Mk.II :20
+Galil AR | Monochrome :30
+SSG-08 | Racer8 :24
+Desert Eagle | Circuit :30
+Glock-18 | Fuji :30
+Dual Berettas | Inked :24
+Five-SeveN | X-Ray :25
+SG 553 | Dynasty :16
+SG 553 | Frostline :176
+Five-SeveN | Icecap :694
+MP9 | Choke Oil :22
+P250 | Mindspill :75
+P90 | Synthwave :18
+Sawed-Off | Improvised :26
+XM1014 | Office :25
+Zeus x27 | Overcharge :27
+Dual Berettas | Gilded :10
+P250 | Glacial :1321
+Zeus x27 | BitFyre :22
+Desert Eagle | Paranoia :8
+Five-SeveN | Control :6
+AK-47 | Red Baron :356
+AUG | Hot Rod :7
+AUG | Overgrowth :60
+AUG | Predator :1
+AUG | Tension :5
+Desert Eagle | Spectrum :1
+Desert Eagle | Turbo :1
+Desert Eagle | Velocity :5
+Dual Berettas | Overclock :2
+Dual Berettas | Tension :6
+Dual Berettas | Vernal :3
+FAMAS | Arctic Camo :49
+FAMAS | Medic :2
+FAMAS | Wallpaper :65
+Galil AR | Feral :144
+Galil AR | Irradiated :20
+Galil AR | Limewire :1
+Glock-18 | Broken TV :1
+M4A1-S | BlackOps :2
+MAC-10 | Daisies :3
+MAC-10 | Ivory :4
+MAC-10 | Nailgun :4
+Mac-10 | NGRAM :3
+MAG-7 | Vision7 :1
+MP9 | Canyon :1
+MP9 | Classified :1
+MP9 | Graffiti :11
+MP9 | Paranoia :5
+Negev | Noctiflora :1
+Negev | Rotary Power :1
+Negev | The Jungle :2
+Nova | Flutter :1
+Nova | Half+One :1
+Nova | Heat :1
+Nova | Slime :3
+P250 | B-250 :6
+P250 | Frutiger Aero :1
+P250 | Pulse :10
+P250 | Zen :3
+P90 | Big Cat :1
+P90 | Database :2
+R8 Revolver | Bloody8 :1
+R8 Revolver | Warui :5
+Sawed-Off | Panthera :3
+SG-553 | Cryo :5
+SSG-08 | Desert Strike :1
+SSG-08 | Labyrinth :9
+Tec-9 | Monarch :11
+Tec-9 | Striker 5
+Tec-9 | Timeless 4
+Tec-9 | Trajectory 1
+Tec-9 | Vice 2
+USP-S | Heated 1
+USP-S | SpecOps 2
+XM1014 | Abstract 5
+XM1014 | Koi 1
+XM1014 | Lilies 16
+XM1014 | Splatter 4
+AK-47 | Lore 503
+AK-47 | Rebellion 260
+AWP | Freedom 411
+AWP | HexPop 155
+AWP | Lore 674
+Bayonet | Nebula Black Pearl 183394
+Bayonet | Nebula Phase 1 42069
+Bayonet | Nebula Phase 2 19838
+Bayonet | Nebula Phase 3 34101
+Bayonet | Nebula Phase 4 76549
+Bayonet | Nebula Ruby 74301
+Bayonet | Nebula Sapphire 98419
+Butterfly | Nebula Black Pearl 193195
+Butterfly | Nebula Phase 1 51151
+Butterfly | Nebula Phase 2 77541
+Butterfly | Nebula Phase 3 85526
+Butterfly | Nebula Phase 4 108313
+Butterfly | Nebula Ruby 193817
+Butterfly | Nebula Sapphire 138593
+Desert Eagle | Freedom 291
+Desert Eagle | Lore 265
+Desert Eagle | Punk 5
+Five-SeveN | NoMercy 68
+Glock-18 | Yurei 36
+Gut | Nebula Black Pearl 17181
+Gut | Nebula Phase 1 17431
+Gut | Nebula Phase 2 26537
+Gut | Nebula Phase 3 19002
+Gut | Nebula Phase 4 14053
+Gut | Nebula Ruby 21027
+Gut | Nebula Sapphire 16321 
+Karambit | Nebula Black Pearl 149578
+Karambit | Nebula Phase 1 48671
+Karambit | Nebula Phase 2 53966
+Karambit | Nebula Phase 3 192353
+Karambit | Nebula Phase 4 95013
+Karambit | Nebula Ruby 178315
+Karambit | Nebula Sapphire 120412
+M4A4 | Freedom 338
+M4A4 | The Ambassador 25
+MAC-10 | Air Mail 90
+MAG-7 | Visión 1
+MP9 | Patina 2
+Negev | Frostbloom 11
+Nova | Arctic Stripe 4
+Nova | Half-Tone 1
+Nova | Huntsman 1
+P90 | Visions 7
+R8 Revolver | Regalia 35
+R8 Revolver | Waru 4
+Sawed-Off | Orbit 1
+Sawed-Off | Panthress 3
+Sports Globas | The Ambassador 3136
+SSG-08 | GutterFreak 12
+Tec-9 | Medal 54
+USP-S | Tora 12
+USP-S | WinterGreen 615
+XM1014 | BloxoBlasto 150
+Zeus x27 | MedScan 1
+Butterfly | Blackwidow 4414
+Handwraps | Aztec 4225
+Handwraps | Bandage 4669
+Handwraps | Camoflage 1880
+Handwraps | Carpet 1691
+Handwraps | Checkers 2542
+Handwraps | Crime Scene 2854
+Handwraps | Hunter 1831
+Handwraps | Meander 3720
+Handwraps | Snakeskin 1939
+Handwraps | Taped 1878
+MAG-7 | Vision 1

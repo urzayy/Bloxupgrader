@@ -289,8 +289,11 @@ export function Header({
         open={depositMethodOpen}
         onClose={() => setDepositMethodOpen(false)}
         onSelectRobux={() => setRobuxDepositOpen(true)}
-        onSelectSkins={() => setDepositOpen(true)}
-        onSelectCash={() => setCashDepositOpen(true)}
+        onRequestDeposit={async (items, bonus) => {
+          const bundle = await onDepositRequest(items, bonus);
+          if (bundle) openSupportChat(bundle.ticket.id, bundle);
+          return bundle;
+        }}
       />
       {onRobuxDepositRequest && (
         <RobuxDepositModal
