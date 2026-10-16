@@ -1,5 +1,7 @@
 import { DISCORD_INVITE_URL } from '../../lib/discordUrl';
 import { navigateCookiePolicy, navigatePrivacyPolicy, navigateProvablyFair, navigateTermsOfService } from '../../lib/appRoute';
+import { useT } from '../../i18n/LocaleContext';
+import { NAV_LABEL_KEYS } from '../../i18n/navLabels';
 import { NAV_ITEMS, navigateNavItem } from '../../lib/navItems';
 import { scrollToPageTop } from '../../lib/scrollToSection';
 
@@ -23,6 +25,7 @@ interface Props {
 }
 
 export function SiteFooter({ registeredUsers }: Props) {
+  const t = useT();
   const gameItems = NAV_ITEMS.filter(item => GAME_NAV_IDS.has(item.id) && item.available);
   const userCount =
     typeof registeredUsers === 'number' && Number.isFinite(registeredUsers)
@@ -58,7 +61,7 @@ export function SiteFooter({ registeredUsers }: Props) {
                     onClick={() => runFooterNavAction(() => navigateNavItem(item))}
                     className="font-display text-sm font-medium text-white/55 transition hover:text-white"
                   >
-                    {item.label}
+                    {t(NAV_LABEL_KEYS[item.id])}
                   </button>
                 </li>
               ))}

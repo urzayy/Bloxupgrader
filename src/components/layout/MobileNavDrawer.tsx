@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useAppRoute } from '../../hooks/useAppRoute';
+import { useT } from '../../i18n/LocaleContext';
+import { NAV_LABEL_KEYS } from '../../i18n/navLabels';
 import { getNavItems, isNavItemActive, navigateNavItem, type NavItem } from '../../lib/navItems';
 import { requestOpenAdminPanel } from '../../lib/uiActions';
 import { useAdminChatNotifications } from '../../lib/adminChatNotifications';
@@ -40,6 +42,7 @@ interface DrawerProps {
 function MobileNavDrawerPanel({ open, onClose }: DrawerProps) {
   const route = useAppRoute();
   const { isAdmin, user } = useAuth();
+  const t = useT();
   const items = getNavItems({ isAdmin, isLoggedIn: Boolean(user) });
   const { attentionCount: adminChatAttentionCount } = useAdminChatNotifications({
     enabled: isAdmin,
@@ -152,7 +155,7 @@ function MobileNavDrawerPanel({ open, onClose }: DrawerProps) {
                             active ? 'text-[#e4d4ff]' : 'text-white/75 group-hover:text-white'
                           }`}
                           >
-                            {item.label}
+                            {t(NAV_LABEL_KEYS[item.id])}
                           </span>
                           {item.description && (
                             <span className="mt-0.5 block truncate text-[11px] text-white/35 group-hover:text-white/50">

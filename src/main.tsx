@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
+import { LocaleProvider } from './i18n/LocaleContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { applyDocumentSeo } from './lib/documentSeo';
 import './index.css';
@@ -17,9 +18,11 @@ if (import.meta.env.PROD) {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <LocaleProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </LocaleProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );

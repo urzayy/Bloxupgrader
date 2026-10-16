@@ -11,6 +11,8 @@ import { ProfilePhotoImage } from '../ui/ProfilePhotoImage';
 import { CoinPrice } from '../ui/CoinPrice';
 import { ProfilePaymentHistoryModal } from './ProfilePaymentHistoryModal';
 import { ProfileHeaderSparkles } from './ProfileHeaderSparkles';
+import { ProfileLanguageSelect } from './ProfileLanguageSelect';
+import { useT } from '../../i18n/LocaleContext';
 
 interface Props {
   balance: number;
@@ -31,6 +33,7 @@ function RankBadge({ level }: { level: number }) {
 
 export function ProfileHeaderCard({ balance }: Props) {
   const { user } = useAuth();
+  const t = useT();
   const fileRef = useRef<HTMLInputElement>(null);
   const { photoUrl, refresh: refreshProfilePhoto } = useProfilePhoto(user?.userId);
   const [uploading, setUploading] = useState(false);
@@ -51,7 +54,7 @@ export function ProfileHeaderCard({ balance }: Props) {
   const handleFileChange = async (file: File | undefined) => {
     if (!file || !user) return;
     if (!/^image\/(jpeg|jpg|png)$/i.test(file.type)) {
-      setUploadError('JPG or PNG only.');
+      setUploadError(t('profile.uploadJpgPng'));
       return;
     }
     setUploading(true);
@@ -60,13 +63,13 @@ export function ProfileHeaderCard({ balance }: Props) {
       const dataUrl = await resizeImageFile(file);
       const result = await uploadProfilePhoto(user.userId, user.email, dataUrl);
       if (!result.ok) {
-        setUploadError(result.error ?? 'Could not upload photo.');
+        setUploadError(result.error ?? t('profile.uploadFailed'));
         return;
       }
       notifyProfilePhotoUpdated();
       void refreshProfilePhoto();
     } catch {
-      setUploadError('Could not process image.');
+      setUploadError(t('profile.processFailed'));
     } finally {
       setUploading(false);
     }
@@ -87,7 +90,7 @@ export function ProfileHeaderCard({ balance }: Props) {
                   <span className="text-sky-400" title="Verified">✓</span>
                 </div>
                 <p className="mt-1 font-display text-base font-bold uppercase tracking-wide text-[#A855F7] lg:text-lg">
-                  {level.rankLabel} | {level.level} LEVEL
+                  {level.rankLabel} | {level.level} {t('profile.level')}
                 </p>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10 lg:h-2.5">
                   <div
@@ -107,7 +110,7 @@ export function ProfileHeaderCard({ balance }: Props) {
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              title="Upload profile photo (JPG/PNG)"
+              title={t('profile.uploadPhotoTitle')}
               className="group relative"
             >
               <div
@@ -134,7 +137,7 @@ export function ProfileHeaderCard({ balance }: Props) {
               </span>
               <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition group-hover:opacity-100">
                 <span className="text-[10px] font-bold uppercase tracking-wide text-white">
-                  {uploading ? 'Uploading…' : 'Change photo'}
+                  {uploading ? t('profile.uploading') : t('profile.changePhoto')}
                 </span>
               </span>
             </button>
@@ -164,7 +167,7 @@ export function ProfileHeaderCard({ balance }: Props) {
                   onClick={requestOpenDeposit}
                   className="shrink-0 rounded-lg bg-gradient-to-r from-[#9333ea] to-[#b56bff] px-6 py-3.5 font-display text-xs font-black uppercase tracking-wide text-white transition hover:brightness-110 sm:px-8 sm:py-4 sm:text-sm"
                 >
-                  + Deposit
+                  {t('profile.deposit')}
                 </button>
               </div>
             </div>
@@ -175,7 +178,7 @@ export function ProfileHeaderCard({ balance }: Props) {
                 className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#1a1530] px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-white/65 transition hover:border-white/20 hover:text-white lg:text-xs"
               >
                 <span aria-hidden="true">👥</span>
-                Affiliate
+                {t('profile.affiliate')}
               </button>
               <button
                 type="button"
@@ -183,9 +186,10 @@ export function ProfileHeaderCard({ balance }: Props) {
                 className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#1a1530] px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-white/65 transition hover:border-white/20 hover:text-white lg:text-xs"
               >
                 <span aria-hidden="true">🕘</span>
-                History
+                {t('profile.history')}
               </button>
             </div>
+            <ProfileLanguageSelect />
             {uploadError && (
               <p className="mt-2 text-[11px] text-risk">{uploadError}</p>
             )}
@@ -208,16 +212,25 @@ export function ProfileHeaderCard({ balance }: Props) {
             onClick={() => setAffiliateOpen(false)}
           />
           <div className="relative max-w-md rounded-2xl border border-white/10 bg-[#151820] p-6 text-center shadow-2xl">
-            <h3 className="font-display text-lg font-bold text-white">Affiliate</h3>
+            <h3 className="font-display text-lg font-bold text-white">{t('profile.affiliateTitle')}</h3>
             <p className="mt-3 text-sm leading-relaxed text-white/70">
-              Send a message to <span className="font-semibold text-[#7b9cff]">@urzayy</span> in Discord to get more information.
+              {t('profile.affiliateBody').split('@urzayy').map((part, i, arr) =>
+                i < arr.length - 1 ? (
+                  <span key={i}>
+                    {part}
+                    <span className="font-semibold text-[#7b9cff]">@urzayy</span>
+                  </span>
+                ) : (
+                  <span key={i}>{part}</span>
+                ),
+              )}
             </p>
             <button
               type="button"
               onClick={() => setAffiliateOpen(false)}
               className="mt-5 rounded-lg border border-white/10 px-4 py-2 text-sm text-white/60 hover:text-white"
             >
-              Close
+              {t('profile.close')}
             </button>
           </div>
         </div>

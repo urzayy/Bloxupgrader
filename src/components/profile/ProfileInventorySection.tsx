@@ -10,15 +10,17 @@ import { CoinPrice } from '../ui/CoinPrice';
 import { SkinImage } from '../skins/SkinImage';
 import { ProfileActiveSkinActionMenu } from './ProfileActiveSkinActionMenu';
 import { CheckRollButton } from '../provablyfair/FairRollModal';
+import { useT } from '../../i18n/LocaleContext';
+import type { MessageKey } from '../../i18n/messages';
 
 const SORT_CYCLE = ['price-asc', 'price-desc', 'time-desc', 'time-asc'] as const;
 type InventorySortMode = (typeof SORT_CYCLE)[number];
 
-const SORT_LABELS: Record<InventorySortMode, string> = {
-  'price-asc': 'Price ↑',
-  'price-desc': 'Price ↓',
-  'time-desc': 'Time ↑',
-  'time-asc': 'Time ↓',
+const SORT_LABEL_KEYS: Record<InventorySortMode, MessageKey> = {
+  'price-asc': 'profile.sortPriceAsc',
+  'price-desc': 'profile.sortPriceDesc',
+  'time-desc': 'profile.sortTimeDesc',
+  'time-asc': 'profile.sortTimeAsc',
 };
 
 function nextSortMode(mode: InventorySortMode): InventorySortMode {
@@ -60,6 +62,7 @@ export function ProfileInventorySection({
   onSellSkin,
 }: Props) {
   const { user } = useAuth();
+  const t = useT();
   const [activeDrops, setActiveDrops] = useState(true);
   const [sortMode, setSortMode] = useState<InventorySortMode>('price-asc');
 
@@ -74,10 +77,10 @@ export function ProfileInventorySection({
   return (
     <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#141024]/95">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] px-5 py-4 sm:px-7 sm:py-5 lg:px-9">
-        <h2 className="font-display text-base font-bold uppercase tracking-wide text-white lg:text-lg">Inventory</h2>
+        <h2 className="font-display text-base font-bold uppercase tracking-wide text-white lg:text-lg">{t('profile.inventory')}</h2>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-[#1a1530] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60 lg:text-xs">
-            <span>Active drops</span>
+            <span>{t('profile.activeDrops')}</span>
             <button
               type="button"
               role="switch"
@@ -99,7 +102,7 @@ export function ProfileInventorySection({
             onClick={() => setSortMode(nextSortMode)}
             className="rounded-lg border border-white/10 bg-[#1a1530] px-4 py-2 font-display text-[11px] font-semibold uppercase tracking-wide text-white/55 transition hover:text-white lg:text-xs"
           >
-            {SORT_LABELS[sortMode]}
+            {t(SORT_LABEL_KEYS[sortMode])}
           </button>
         </div>
       </div>
@@ -110,13 +113,13 @@ export function ProfileInventorySection({
             <span className="text-5xl text-white/25 lg:text-6xl" aria-hidden="true">☹</span>
             <p className="mt-4 text-base font-semibold text-white/75 lg:text-lg">
               {activeDrops
-                ? 'Your inventory is currently empty.'
-                : 'No past skins to show yet.'}
+                ? t('profile.emptyInventory')
+                : t('profile.emptyHistory')}
             </p>
             <p className="mt-2 max-w-lg text-sm text-white/40 lg:text-base">
               {activeDrops
-                ? 'Open one of our best-selling cases and start collecting skins today!'
-                : 'Skins you upgrade, sell or withdraw will appear here as history.'}
+                ? t('profile.emptyInventoryHint')
+                : t('profile.emptyHistoryHint')}
             </p>
           </div>
         ) : (

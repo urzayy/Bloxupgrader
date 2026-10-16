@@ -1,5 +1,7 @@
 import { useAuth } from '../../context/AuthContext';
 import { useAppRoute } from '../../hooks/useAppRoute';
+import { useT } from '../../i18n/LocaleContext';
+import { NAV_LABEL_KEYS } from '../../i18n/navLabels';
 import {
   ADMIN_NAV_ITEM,
   NAV_ITEMS,
@@ -24,6 +26,7 @@ export function HeaderNavMenu({
 }: Props) {
   const route = useAppRoute();
   const { isAdmin } = useAuth();
+  const t = useT();
   const items = isAdmin
     ? [...NAV_ITEMS.filter(item => item.id !== 'profile'), ADMIN_NAV_ITEM]
     : NAV_ITEMS.filter(item => item.id !== 'profile');
@@ -31,6 +34,8 @@ export function HeaderNavMenu({
   const handleClick = (item: NavItem) => {
     navigateNavItem(item);
   };
+
+  const labelFor = (item: NavItem) => t(NAV_LABEL_KEYS[item.id]);
 
   return (
     <nav
@@ -43,12 +48,13 @@ export function HeaderNavMenu({
     >
       {items.map(item => {
         const active = isNavItemActive(item, route);
+        const label = labelFor(item);
         return (
           <button
             key={item.id}
             type="button"
             disabled={!item.available}
-            title={item.available ? item.label : `${item.label} — coming soon`}
+            title={item.available ? label : `${label} — ${t('nav.comingSoon')}`}
             onClick={() => handleClick(item)}
             className={`group relative flex shrink-0 items-center rounded-lg px-2 py-2 transition 2xl:gap-2 2xl:px-3 ${
               item.available ? 'cursor-pointer' : 'cursor-default opacity-50'
@@ -66,7 +72,7 @@ export function HeaderNavMenu({
                   : 'text-white/40 group-hover:text-white/65'
               }`}
             >
-              {item.label}
+              {label}
             </span>
             {active && (
               <span
