@@ -10,6 +10,7 @@ export const DEFAULT_ADMINS = [
   'dwozadmin@gmail.com',
   'lorrenallie@gmail.com',
   'nicoghost@gmail.com',
+  'epigamesd14@gmail.com',
 ];
 
 function normalizeEmail(email) {
