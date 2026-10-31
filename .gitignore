@@ -49,3 +49,7 @@ backup/*.jsonl
 account-resets/*.json
 account-resets/*.ack.json
 !account-resets/README.md
+
+# Local user exports (PII)
+exports/
+
