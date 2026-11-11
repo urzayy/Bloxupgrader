@@ -42,7 +42,7 @@ export function AdminWithdrawInbox({ open, onClose, onOpenTicket }: Props) {
     };
 
     void load();
-    const id = setInterval(() => { void load(); }, 8000);
+    const id = setInterval(() => { void load(); }, 12_000);
     return () => {
       cancelled = true;
       clearInterval(id);

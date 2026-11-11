@@ -74,7 +74,13 @@ export function WithdrawChatModal({
     if (next.ticket.id !== forTicketId) return;
     setNotFound(false);
     setBundle(prev => {
-      if (prev && prev.ticket.id === forTicketId && prev.ticket.updatedAt > next.ticket.updatedAt) {
+      if (!prev || prev.ticket.id !== forTicketId) return next;
+      if (prev.ticket.updatedAt > next.ticket.updatedAt) return prev;
+      if (
+        prev.ticket.updatedAt === next.ticket.updatedAt
+        && prev.ticket.status === next.ticket.status
+        && prev.messages.length === next.messages.length
+      ) {
         return prev;
       }
       return next;
@@ -166,7 +172,7 @@ export function WithdrawChatModal({
     };
 
     void load();
-    pollId = setInterval(() => { void load(); }, 2500);
+    pollId = setInterval(() => { void load(); }, 4000);
     return () => {
       cancelled = true;
       if (pollId) clearInterval(pollId);

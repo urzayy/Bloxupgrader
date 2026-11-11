@@ -3,32 +3,66 @@ import path from 'node:path';
 import { createTimedSupabase } from './supabaseEnv.mjs';
 import { preferLocalFileStore } from './localFilePrefer.mjs';
 
-function countUnreadUserMessages(messages, lastReadAt) {
-  return messages.filter(message => message.senderRole === 'user' && message.createdAt > lastReadAt).length;
+function slimTicketForInbox(ticket) {
+  if (!ticket || typeof ticket !== 'object') return ticket;
+  const skins = Array.isArray(ticket.skins) ? ticket.skins : [];
+  return {
+    ...ticket,
+    // Keep a tiny skin preview so inbox payloads stay light even with huge deposits.
+    skins: skins.slice(0, 8).map(skin => ({
+      id: skin.id,
+      name: skin.name,
+      price: skin.price,
+      image: skin.image,
+      quantity: skin.quantity,
+    })),
+  };
+}
+
+function summarizeBundleForInbox(bundle) {
+  const messages = Array.isArray(bundle?.messages) ? bundle.messages : [];
+  const userMessageAts = [];
+  let lastUserMessage = null;
+  for (const message of messages) {
+    if (message?.senderRole !== 'user') continue;
+    const createdAt = Number(message.createdAt) || 0;
+    userMessageAts.push(createdAt);
+    if (!lastUserMessage || createdAt > lastUserMessage.createdAt) {
+      lastUserMessage = { createdAt, text: String(message.text || '').slice(0, 160) };
+    }
+  }
+  return {
+    ticket: slimTicketForInbox(bundle?.ticket),
+    userMessageAts,
+    lastUserMessageAt: lastUserMessage?.createdAt ?? 0,
+    lastUserMessageText: lastUserMessage?.text ?? null,
+  };
+}
+
+function inboxItemFromSummary(summary, lastReadByTicket = {}) {
+  const ticket = summary.ticket;
+  const storedRead = lastReadByTicket[ticket.id];
+  const unreadCount = storedRead === undefined
+    ? Math.max(1, summary.userMessageAts.length)
+    : summary.userMessageAts.filter(createdAt => createdAt > storedRead).length;
+  return {
+    ticket,
+    unreadCount,
+    lastUserMessageAt: summary.lastUserMessageAt,
+    lastUserMessageText: summary.lastUserMessageText,
+    isUnseen: storedRead === undefined,
+  };
 }
 
 function buildInboxItems(tickets, loadBundle, lastReadByTicket = {}, { includeBundle = false } = {}) {
   return tickets.map(ticket => {
     const bundle = loadBundle(ticket.id);
-    const messages = bundle?.messages ?? [];
-    const userMessages = messages.filter(message => message.senderRole === 'user');
-    const lastUserMessage = userMessages.length
-      ? userMessages.reduce((latest, message) => (
-        message.createdAt > latest.createdAt ? message : latest
-      ))
-      : null;
-    const lastUserMessageAt = lastUserMessage?.createdAt ?? 0;
-    const storedRead = lastReadByTicket[ticket.id];
-    const unreadCount = storedRead === undefined
-      ? Math.max(1, userMessages.length)
-      : countUnreadUserMessages(messages, storedRead);
+    const summary = summarizeBundleForInbox(bundle ?? { ticket, messages: [] });
+    const item = inboxItemFromSummary(summary, lastReadByTicket);
     return {
-      ticket: bundle?.ticket ?? ticket,
+      ...item,
+      ticket: slimTicketForInbox(bundle?.ticket ?? ticket),
       ...(includeBundle && bundle ? { bundle } : {}),
-      unreadCount,
-      lastUserMessageAt,
-      lastUserMessageText: lastUserMessage?.text?.slice(0, 160) ?? null,
-      isUnseen: storedRead === undefined,
     };
   });
 }
@@ -87,10 +121,18 @@ async function mergeTicketLists(remoteStore, fileStore, filter) {
 export function createFileWithdrawChatStore(chatsDir) {
   if (!fs.existsSync(chatsDir)) fs.mkdirSync(chatsDir, { recursive: true });
   const emailIndexDir = path.join(chatsDir, 'by-email');
+  /** @type {Array<object>|null} */
   let ticketIndex = null;
+  /** @type {Map<string, ReturnType<typeof summarizeBundleForInbox>>|null} */
+  let inboxSummaryById = null;
 
   function ticketPath(id) {
     return path.join(chatsDir, `${id}.json`);
+  }
+
+  function invalidateIndexes() {
+    ticketIndex = null;
+    inboxSummaryById = null;
   }
 
   function emailIndexPath(email) {
@@ -146,18 +188,23 @@ export function createFileWithdrawChatStore(chatsDir) {
     writeEmailIndexIds(email, ids);
   }
 
-  function scanAllTickets() {
+  function ensureIndexes() {
+    if (ticketIndex && inboxSummaryById) return;
     const tickets = [];
+    const summaries = new Map();
     for (const name of fs.readdirSync(chatsDir)) {
       if (!name.endsWith('.json')) continue;
       try {
         const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, name), 'utf8'));
-        if (bundle?.ticket?.id) tickets.push(bundle.ticket);
+        if (!bundle?.ticket?.id) continue;
+        tickets.push(bundle.ticket);
+        summaries.set(bundle.ticket.id, summarizeBundleForInbox(bundle));
       } catch {
         /* skip corrupt file */
       }
     }
-    return tickets;
+    ticketIndex = tickets;
+    inboxSummaryById = summaries;
   }
 
   return {
@@ -166,9 +213,10 @@ export function createFileWithdrawChatStore(chatsDir) {
       return loadBundleSync(id);
     },
     async saveBundle(bundle) {
-      fs.writeFileSync(ticketPath(bundle.ticket.id), JSON.stringify(bundle, null, 2), 'utf8');
+      // Compact JSON: faster writes/reads than pretty-printed chat files.
+      fs.writeFileSync(ticketPath(bundle.ticket.id), JSON.stringify(bundle), 'utf8');
       indexTicketByEmail(bundle.ticket);
-      ticketIndex = null;
+      invalidateIndexes();
       return bundle;
     },
     async deleteBundle(id) {
@@ -178,16 +226,12 @@ export function createFileWithdrawChatStore(chatsDir) {
         try { fs.unlinkSync(file); } catch { /* ignore */ }
       }
       if (existing?.ticket) removeTicketFromEmailIndex(existing.ticket);
-      ticketIndex = null;
+      invalidateIndexes();
       return { ok: true };
     },
     async listTickets(filter) {
-      let files = ticketIndex;
-      if (!files) {
-        files = scanAllTickets();
-        ticketIndex = files;
-      }
-      let tickets = files;
+      ensureIndexes();
+      let tickets = ticketIndex ?? [];
       if (filter?.userId || filter?.userEmail) {
         tickets = tickets.filter(ticket => ticketMatchesOwner(ticket, filter));
       }
@@ -199,6 +243,9 @@ export function createFileWithdrawChatStore(chatsDir) {
           const bundle = loadBundleSync(id);
           if (bundle?.ticket && ticketMatchesOwner(bundle.ticket, filter)) {
             byId.set(id, bundle.ticket);
+            if (inboxSummaryById) {
+              inboxSummaryById.set(id, summarizeBundleForInbox(bundle));
+            }
           }
         }
         tickets = Array.from(byId.values());
@@ -207,8 +254,16 @@ export function createFileWithdrawChatStore(chatsDir) {
       return tickets.sort((a, b) => b.updatedAt - a.updatedAt);
     },
     async buildAdminInbox(lastReadByTicket = {}) {
-      const tickets = (await this.listTickets({ openOnly: true })).slice(0, 60);
-      return buildInboxItems(tickets, loadBundleSync, lastReadByTicket, { includeBundle: false });
+      ensureIndexes();
+      const openTickets = (ticketIndex ?? [])
+        .filter(ticket => ticket.status === 'open')
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 60);
+      return openTickets.map(ticket => {
+        const summary = inboxSummaryById?.get(ticket.id)
+          ?? summarizeBundleForInbox({ ticket, messages: [] });
+        return inboxItemFromSummary(summary, lastReadByTicket);
+      });
     },
   };
 }
@@ -351,11 +406,17 @@ export function createHybridWithdrawChatStore(fileStore, remoteStore) {
       return mergeTicketLists(remoteStore, fileStore, filter);
     },
     async buildAdminInbox(lastReadByTicket = {}) {
+      // Prefer the local file inbox index (single scan, no double-read / no remote merge).
+      try {
+        return await fileStore.buildAdminInbox(lastReadByTicket);
+      } catch (error) {
+        console.error('[withdraw-chat] file admin inbox failed, using remote fallback:', supabaseErrorMessage(error));
+      }
       const tickets = (await this.listTickets({ openOnly: true })).slice(0, 60);
       return tickets.map((ticket) => {
         const storedRead = lastReadByTicket[ticket.id];
         return {
-          ticket,
+          ticket: slimTicketForInbox(ticket),
           unreadCount: storedRead === undefined ? 1 : 0,
           lastUserMessageAt: ticket.updatedAt ?? 0,
           lastUserMessageText: null,

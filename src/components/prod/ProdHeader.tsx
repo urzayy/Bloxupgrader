@@ -150,7 +150,7 @@ export function Header({
       }
     };
     void load();
-    const id = setInterval(() => { void load(); }, 8000);
+    const id = setInterval(() => { void load(); }, 15_000);
     return () => clearInterval(id);
   }, [user, liveChatsOpen, supportChatOpen, withdrawOpen, depositOpen]);
 

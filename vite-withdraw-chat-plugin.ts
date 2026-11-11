@@ -123,36 +123,76 @@ export function withdrawChatPlugin(
         ticketListCache = null;
       };
 
-      let ticketListCache: { at: number; tickets: WithdrawTicket[] } | null = null;
-      const TICKET_LIST_TTL_MS = 5_000;
+      type InboxSummary = {
+        ticket: WithdrawTicket;
+        userMessageAts: number[];
+        lastUserMessageAt: number;
+        lastUserMessageText: string | null;
+      };
+
+      let ticketListCache: {
+        at: number;
+        tickets: WithdrawTicket[];
+        inboxById: Map<string, InboxSummary>;
+      } | null = null;
+      const TICKET_LIST_TTL_MS = 15_000;
+
+      const slimTicketForInbox = (ticket: WithdrawTicket): WithdrawTicket => ({
+        ...ticket,
+        skins: (ticket.skins ?? []).slice(0, 8),
+      });
+
+      const summarizeBundle = (bundle: TicketBundle): InboxSummary => {
+        const userMessageAts: number[] = [];
+        let lastUserMessage: ChatMessage | null = null;
+        for (const message of bundle.messages ?? []) {
+          if (message.senderRole !== 'user') continue;
+          userMessageAts.push(message.createdAt);
+          if (!lastUserMessage || message.createdAt > lastUserMessage.createdAt) {
+            lastUserMessage = message;
+          }
+        }
+        return {
+          ticket: slimTicketForInbox(bundle.ticket),
+          userMessageAts,
+          lastUserMessageAt: lastUserMessage?.createdAt ?? 0,
+          lastUserMessageText: lastUserMessage?.text?.slice(0, 160) ?? null,
+        };
+      };
+
+      const ensureTicketCache = () => {
+        const now = Date.now();
+        if (ticketListCache && now - ticketListCache.at <= TICKET_LIST_TTL_MS) return ticketListCache;
+        const files = fs.readdirSync(chatsDir).filter(f => f.endsWith('.json'));
+        const tickets: WithdrawTicket[] = [];
+        const inboxById = new Map<string, InboxSummary>();
+        for (const file of files) {
+          try {
+            const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, file), 'utf8')) as TicketBundle;
+            if (!bundle?.ticket) continue;
+            tickets.push(bundle.ticket);
+            inboxById.set(bundle.ticket.id, summarizeBundle(bundle));
+          } catch {
+            /* skip corrupt file */
+          }
+        }
+        ticketListCache = {
+          at: now,
+          tickets: tickets.sort((a, b) => b.updatedAt - a.updatedAt),
+          inboxById,
+        };
+        return ticketListCache;
+      };
 
       const listTickets = (filter?: {
         userId?: string;
         userEmail?: string;
         openOnly?: boolean;
       }): WithdrawTicket[] => {
-        const now = Date.now();
-        if (!ticketListCache || now - ticketListCache.at > TICKET_LIST_TTL_MS) {
-          const files = fs.readdirSync(chatsDir).filter(f => f.endsWith('.json'));
-          const tickets: WithdrawTicket[] = [];
-          for (const file of files) {
-            try {
-              const bundle = JSON.parse(fs.readFileSync(path.join(chatsDir, file), 'utf8')) as TicketBundle;
-              if (!bundle?.ticket) continue;
-              tickets.push(bundle.ticket);
-            } catch {
-              /* skip corrupt file */
-            }
-          }
-          ticketListCache = {
-            at: now,
-            tickets: tickets.sort((a, b) => b.updatedAt - a.updatedAt),
-          };
-        }
-
+        const cache = ensureTicketCache();
         const wantId = filter?.userId ? String(filter.userId) : '';
         const wantEmail = String(filter?.userEmail || '').trim().toLowerCase();
-        return ticketListCache.tickets.filter(ticket => {
+        return cache.tickets.filter(ticket => {
           if (wantId || wantEmail) {
             const matchId = wantId && String(ticket.userId || '') === wantId;
             const matchEmail = wantEmail
@@ -164,30 +204,24 @@ export function withdrawChatPlugin(
         });
       };
 
-      const countUnreadUserMessages = (messages: ChatMessage[], lastReadAt: number) =>
-        messages.filter(message => message.senderRole === 'user' && message.createdAt > lastReadAt).length;
-
       const buildAdminInbox = (lastReadByTicket: Record<string, number> = {}) => {
-        const tickets = listTickets({ openOnly: true });
-        return tickets.map(ticket => {
-          const bundle = loadBundle(ticket.id);
-          const messages = bundle?.messages ?? [];
-          const userMessages = messages.filter(message => message.senderRole === 'user');
-          const lastUserMessage = userMessages.length
-            ? userMessages.reduce((latest, message) => (
-              message.createdAt > latest.createdAt ? message : latest
-            ))
-            : null;
-          const lastUserMessageAt = lastUserMessage?.createdAt ?? 0;
+        const cache = ensureTicketCache();
+        return listTickets({ openOnly: true }).slice(0, 60).map(ticket => {
+          const summary = cache.inboxById.get(ticket.id) ?? {
+            ticket: slimTicketForInbox(ticket),
+            userMessageAts: [] as number[],
+            lastUserMessageAt: 0,
+            lastUserMessageText: null as string | null,
+          };
           const storedRead = lastReadByTicket[ticket.id];
           const unreadCount = storedRead === undefined
-            ? Math.max(1, userMessages.length)
-            : countUnreadUserMessages(messages, storedRead);
+            ? Math.max(1, summary.userMessageAts.length)
+            : summary.userMessageAts.filter(createdAt => createdAt > storedRead).length;
           return {
-            ticket,
+            ticket: summary.ticket,
             unreadCount,
-            lastUserMessageAt,
-            lastUserMessageText: lastUserMessage?.text?.slice(0, 160) ?? null,
+            lastUserMessageAt: summary.lastUserMessageAt,
+            lastUserMessageText: summary.lastUserMessageText,
             isUnseen: storedRead === undefined,
           };
         });

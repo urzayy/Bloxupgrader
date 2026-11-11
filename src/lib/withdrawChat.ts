@@ -250,7 +250,7 @@ export async function fetchUserWithdrawTickets(
   }
 
   // Recover missing remembered chats in parallel (never block the inbox for seconds).
-  const missing = rememberedLiveChatTicketIds(email ?? '').filter(id => !byId.has(id)).slice(0, 8);
+  const missing = rememberedLiveChatTicketIds(email ?? '').filter(id => !byId.has(id)).slice(0, 3);
   if (missing.length) {
     const recovered = await Promise.allSettled(
       missing.map(async id => {

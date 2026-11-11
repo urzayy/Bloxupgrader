@@ -47,8 +47,8 @@ function buildNewChatPreview(item: AdminInboxItem): string {
     : 'New withdrawal chat';
 }
 
-/** Fast enough that admins hear new chats within a few seconds. */
-const DEFAULT_POLL_MS = 4_000;
+/** Balance responsiveness vs server load (inbox index is cached server-side). */
+const DEFAULT_POLL_MS = 8_000;
 type Listener = (state: { attentionCount: number; toasts: AdminChatToast[] }) => void;
 
 const shared = {
@@ -97,9 +97,18 @@ function emit() {
   for (const listener of shared.listeners) listener(state);
 }
 
+function emitIfChanged(prevCount: number, prevToasts: AdminChatToast[]) {
+  const toastsChanged = prevToasts !== shared.toasts
+    && (prevToasts.length !== shared.toasts.length
+      || prevToasts.some((toast, i) => toast.id !== shared.toasts[i]?.id));
+  if (prevCount !== shared.attentionCount || toastsChanged) emit();
+}
+
 async function sharedPoll() {
   if (shared.inFlight || shared.enabledCount <= 0) return;
   shared.inFlight = true;
+  const prevCount = shared.attentionCount;
+  const prevToasts = shared.toasts;
   try {
     const items = await fetchAdminInbox(getAdminLastReadMap());
     shared.attentionCount = getAdminInboxAttentionCount(items);
@@ -115,7 +124,7 @@ async function sharedPoll() {
     if (!shared.initialized) {
       shared.snapshot = nextSnapshot;
       shared.initialized = true;
-      emit();
+      emitIfChanged(prevCount, prevToasts);
       return;
     }
 
@@ -163,10 +172,10 @@ async function sharedPoll() {
 
     shared.toasts = nextToasts.slice(-4);
     shared.snapshot = nextSnapshot;
-    emit();
+    emitIfChanged(prevCount, prevToasts);
   } catch {
     shared.attentionCount = 0;
-    emit();
+    emitIfChanged(prevCount, prevToasts);
   } finally {
     shared.inFlight = false;
   }
